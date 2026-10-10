@@ -192,6 +192,54 @@ export class Sfx {
       case 'freezehit':
         this.burst(o, t, 'highpass', 6000, 3000, 0.15, 0.3);
         break;
+      case 'worb':
+        this.tone(o, t, 'sine', 900, 300, 0.4, 0.5, 0.03);
+        this.tone(o, t, 'triangle', 1350, 450, 0.4, 0.3, 0.03);
+        break;
+      case 'whloop':
+        for (let i = 0; i < 4; i++) this.tone(o, t + i * 0.7, 'sine', 1200 + i * 200, 1500 + i * 200, 0.7, 0.25, 0.2);
+        this.burst(o, t, 'highpass', 3000, 6000, 2.8, 0.25, 1);
+        break;
+      case 'nova':
+        this.tone(o, t, 'sine', 300, 1800, 0.25, 0.7, 0.01);
+        this.burst(o, t + 0.1, 'bandpass', 4000, 300, 0.9, 1.1, 0.6);
+        break;
+      case 'tp':
+        this.tone(o, t, 'sine', 300, 2400, 0.25, 0.5, 0.01);
+        this.tone(o, t + 0.05, 'triangle', 2400, 600, 0.3, 0.3, 0.01);
+        this.burst(o, t, 'highpass', 2000, 8000, 0.3, 0.3);
+        break;
+      case 'saw':
+        this.tone(o, t, 'sawtooth', 700, 1400, 0.25, 0.25);
+        this.burst(o, t, 'bandpass', 5000, 3000, 0.2, 0.4, 3);
+        break;
+      case 'sawhit':
+        this.burst(o, t, 'bandpass', 3500, 2500, 0.12, 0.5, 4);
+        this.tone(o, t, 'square', 1800, 900, 0.08, 0.15);
+        break;
+      case 'zig':
+        for (let i = 0; i < 3; i++) this.tone(o, t + i * 0.04, 'square', 1600 - i * 300, 900 - i * 200, 0.05, 0.18);
+        this.burst(o, t, 'highpass', 3000, 2000, 0.12, 0.3);
+        break;
+      case 'mount':
+        this.tone(o, t, 'triangle', 400, 600, 0.1, 0.4);
+        this.tone(o, t + 0.08, 'triangle', 600, 900, 0.12, 0.35);
+        break;
+      case 'crash':
+        this.burst(o, t, 'lowpass', 1800, 150, 0.4, 1.0, 0.8);
+        this.tone(o, t, 'square', 120, 40, 0.2, 0.4);
+        break;
+      case 'squeak':
+        this.tone(o, t, 'sine', 1800, 3200, 0.08, 0.35, 0.005);
+        this.tone(o, t + 0.07, 'sine', 2600, 1900, 0.1, 0.3, 0.005);
+        break;
+      case 'stomp':
+        this.tone(o, t, 'sine', 80, 30, 0.5, 1.2);
+        this.burst(o, t, 'lowpass', 900, 80, 0.6, 1.0);
+        break;
+      case 'jetstart':
+        this.burst(o, t, 'bandpass', 400, 1200, 0.3, 0.6, 1);
+        break;
     }
   }
 
@@ -206,9 +254,26 @@ export class Sfx {
     const nodes = [];
     const f = this.ctx.createBiquadFilter();
     f.type = 'lowpass';
-    f.frequency.value = kind === 'laser' ? 1800 : 5000;
+    f.frequency.value = kind === 'laser' ? 1800 : kind === 'moto' ? 900 : kind === 'jet' ? 1400 : 5000;
     f.connect(g);
-    if (kind === 'laser') {
+    let pitched = []; // hızla perdesi değişen osilatörler (motor)
+    if (kind === 'moto') {
+      const o1 = this.ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 55;
+      const o2 = this.ctx.createOscillator(); o2.type = 'square'; o2.frequency.value = 82;
+      const m = this.ctx.createGain(); m.gain.value = 0.3;
+      o1.connect(m); o2.connect(m); m.connect(f);
+      nodes.push(o1, o2);
+      pitched = [[o1, 55], [o2, 82]];
+    } else if (kind === 'jet') {
+      const n = this.ctx.createBufferSource(); n.buffer = this.noise; n.loop = true;
+      const bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 600; bp.Q.value = 0.7;
+      const ng = this.ctx.createGain(); ng.gain.value = 0.9;
+      n.connect(bp).connect(ng).connect(f);
+      const o1 = this.ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 70;
+      const og = this.ctx.createGain(); og.gain.value = 0.12;
+      o1.connect(og).connect(f);
+      nodes.push(n, o1);
+    } else if (kind === 'laser') {
       const o1 = this.ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 220;
       const o2 = this.ctx.createOscillator(); o2.type = 'square'; o2.frequency.value = 331;
       const lfo = this.ctx.createOscillator(); lfo.frequency.value = 18;
@@ -233,10 +298,14 @@ export class Sfx {
     nodes.forEach((n) => n.start(t));
     const self = this;
     const h = {
-      update(p) {
-        const s = self.spatial(p, 0.7);
+      update(p, vol = 0.7) {
+        const s = self.spatial(p, vol);
         g.gain.setTargetAtTime(s.gain, self.ctx.currentTime, 0.03);
         if (pan) pan.pan.setTargetAtTime(s.pan, self.ctx.currentTime, 0.03);
+      },
+      // Motor devri: 1 = rölanti
+      setRate(r) {
+        for (const [o, base] of pitched) o.frequency.setTargetAtTime(base * r, self.ctx.currentTime, 0.05);
       },
       stop() {
         const now = self.ctx.currentTime;

@@ -3,6 +3,7 @@
 import { CONFIG } from './config.js';
 import { hashAccessCode } from './sha256.js';
 import { WEAPONS, randomCrateWeapon } from './weapons.js';
+import { VEH } from './vehicles.js';
 
 export const PLAYER_COLORS = [
   0xe74c3c, 0x3498db, 0x2ecc71, 0xf1c40f, 0x9b59b6, 0x1abc9c,
@@ -12,6 +13,7 @@ export const CRATE_FALL_H = 30;
 export const CRATE_FALL_SPEED = 5;
 const RESPAWN_TIME = 3;
 const SPAWN_PROTECT = 2;
+const VEHICLE_RESET = 90; // terk edilen araç bu kadar saniye sonra park yerine döner
 
 const r2 = (v) => Math.round(v * 100) / 100;
 
@@ -34,6 +36,9 @@ export class HostLogic {
     this.holeTimer = 0;
     this.deliver = null;
     this.worker = null;
+    this.vehicles = map.vehicleSpawns.map((v, i) => ({
+      id: i + 1, kind: v.kind, x: v.x, y: v.y, z: v.z, yaw: v.yaw, rider: null, idle: 0, home: { ...v },
+    }));
   }
 
   // --------------------------------------------------------
@@ -82,6 +87,7 @@ export class HostLogic {
       hp: 100, alive: false, x: 0, y: 0, z: 0, yaw: 0, pitch: 0, w: 'pistol', f: 0,
       kills: 0, deaths: 0, inv: new Set(['pistol']), prot: 0, respawnAt: 0,
       lastHit: {}, proj: new Map(), ping: 0, lastChat: 0, lastSeen: performance.now(),
+      veh: null, jet: false,
     };
   }
 
@@ -90,6 +96,42 @@ export class HostLogic {
       id: p.id, name: p.name, color: p.color, hp: p.hp, alive: p.alive,
       x: r2(p.x), y: r2(p.y), z: r2(p.z), yaw: r2(p.yaw), w: p.w, kills: p.kills, deaths: p.deaths,
     };
+  }
+
+  vehInfo(v) {
+    return { id: v.id, k: v.kind, p: [r2(v.x), r2(v.y), r2(v.z)], yaw: r2(v.yaw), r: v.rider };
+  }
+
+  vehicle(id) {
+    return this.vehicles.find((v) => v.id === id) || null;
+  }
+
+  // Aracı bırak (inme, ölüm, çıkış, ışınlanma)
+  parkVehicle(v, x, y, z, yaw, forced) {
+    const rider = this.players.get(v.rider);
+    if (rider) rider.veh = null;
+    const by = v.rider;
+    v.rider = null;
+    v.x = x; v.y = y; v.z = z; v.yaw = yaw;
+    v.idle = this.time;
+    this.broadcast({ t: 'dismount', v: v.id, by, p: [r2(x), r2(y), r2(z)], yaw: r2(yaw), f: forced ? 1 : 0 });
+  }
+
+  releaseVehicle(p) {
+    const v = p.veh ? this.vehicle(p.veh) : null;
+    if (v && v.rider === p.id) this.parkVehicle(v, v.x, v.y, v.z, v.yaw, true);
+    p.veh = null;
+  }
+
+  resetVehicle(v) {
+    if (v.rider !== null) return;
+    // Park yerinde biri duruyorsa bekle
+    for (const p of this.players.values()) {
+      if (p.alive && Math.hypot(p.x - v.home.x, p.z - v.home.z) < 2.5) return;
+    }
+    v.x = v.home.x; v.y = v.home.y; v.z = v.home.z; v.yaw = v.home.yaw;
+    v.idle = this.time;
+    this.broadcast({ t: 'vpos', v: v.id, p: [v.x, v.y, v.z], yaw: r2(v.yaw) });
   }
 
   crateInfo(c) {
@@ -102,7 +144,8 @@ export class HostLogic {
       time: this.time,
       players: [...this.players.values()].map((p) => this.publicInfo(p)),
       crates: [...this.crates.values()].map((c) => this.crateInfo(c)),
-      holes: this.holes.map((h) => ({ id: h.id, p: [h.x, h.y, h.z], by: h.by, dur: h.dur - (this.time - h.born) })),
+      holes: this.holes.map((h) => ({ id: h.id, k: h.k, p: [h.x, h.y, h.z], by: h.by, dur: h.dur - (this.time - h.born) })),
+      vehicles: this.vehicles.map((v) => this.vehInfo(v)),
     };
   }
 
@@ -167,6 +210,7 @@ export class HostLogic {
   removePlayer(id) {
     const p = this.players.get(id);
     if (!p) return;
+    this.releaseVehicle(p);
     this.players.delete(id);
     this.conns.delete(id);
     this.broadcast({ t: 'leave', id });
@@ -194,8 +238,10 @@ export class HostLogic {
 
   spawnPlayer(p) {
     const s = this.pickSpawn(p);
+    this.releaseVehicle(p);
     p.alive = true;
     p.hp = 100;
+    p.jet = false;
     p.inv = new Set(['pistol']);
     p.w = 'pistol';
     p.prot = this.time + SPAWN_PROTECT;
@@ -219,7 +265,9 @@ export class HostLogic {
       if (ok) break;
     }
     y = r2(y);
-    const k = Math.random() < 0.25 ? 'h' : 'w';
+    // h: can, j: jetpack, w: silah
+    const roll = Math.random();
+    const k = roll < 0.2 ? 'h' : roll < 0.3 ? 'j' : 'w';
     const c = {
       id: this.nextCrate++, x, y, z, k, w: k === 'w' ? randomCrateWeapon() : null,
       born: this.time - (landed ? CRATE_FALL_H / CRATE_FALL_SPEED : 0),
@@ -252,18 +300,21 @@ export class HostLogic {
       tg.deaths++;
       tg.respawnAt = this.time + RESPAWN_TIME;
       tg.proj.clear();
+      tg.jet = false;
+      this.releaseVehicle(tg);
       if (a && a !== tg) a.kills++;
       this.broadcast({ t: 'kill', tg: tg.id, a: a ? a.id : -1, w, k: a ? a.kills : 0, d: tg.deaths });
     }
   }
 
-  // Atış hızı denetimi (tick aralığından bağımsız gerçek zaman)
+  // Ateş eden oyuncunun doğma koruması biter
   endProtection(p) {
     if (p.prot <= this.time) return;
     p.prot = 0;
     this.broadcast({ t: 'prot', id: p.id });
   }
 
+  // Atış hızı denetimi (tick aralığından bağımsız gerçek zaman)
   rateOk(p, key, minInterval) {
     const t = performance.now() / 1000;
     const last = p.lastHit[key] || -9;
@@ -285,15 +336,23 @@ export class HostLogic {
         if (Array.isArray(msg.r)) { p.yaw = +msg.r[0] || 0; p.pitch = +msg.r[1] || 0; }
         if (WEAPONS[msg.w] && p.inv.has(msg.w)) p.w = msg.w;
         p.f = msg.f | 0;
+        // Bindiği araç binicinin altında hareket eder
+        const v = p.veh ? this.vehicle(p.veh) : null;
+        if (v && Array.isArray(msg.v) && msg.v[0] === v.id) {
+          v.x = x; v.y = y - VEH[v.kind].seatOff; v.z = z;
+          if (Number.isFinite(+msg.v[1])) v.yaw = +msg.v[1];
+        }
         break;
       }
       case 'fire': {
         const W = WEAPONS[msg.w];
         if (!p.alive || !W || !p.inv.has(msg.w)) return;
         this.endProtection(p);
-        if (W.type === 'projectile' && msg.id != null) {
-          p.proj.set(msg.id, { w: msg.w, t: this.time });
-          if (p.proj.size > 20) p.proj.delete(p.proj.keys().next().value);
+        if (W.type === 'projectile') {
+          // Testere tek atışta birden çok mermi (ids) gönderir
+          const ids = Array.isArray(msg.ids) ? msg.ids.slice(0, W.blades || 1) : msg.id != null ? [msg.id] : [];
+          for (const pid of ids) p.proj.set(pid, { w: msg.w, t: this.time });
+          while (p.proj.size > 40) p.proj.delete(p.proj.keys().next().value);
         }
         this.broadcast({ ...msg, by: id }, id);
         break;
@@ -307,13 +366,15 @@ export class HostLogic {
         const tg = this.players.get(msg.tg);
         if (!p.alive || !W || !tg || tg === p || !p.inv.has(msg.w)) return;
         if (Math.hypot(tg.x - p.x, tg.y - p.y, tg.z - p.z) > (W.range || 100) + 8) return;
+        // mt: binicinin aracına isabet (daha az hasar)
+        const mk = msg.mt ? 0.6 : 1;
         if (W.type === 'beam') {
           if (!this.rateOk(p, msg.tg + msg.w, W.tick * 0.6)) return;
-          this.damage(tg, p, W.dmg, msg.w, W.slow ? { fz: W.slow } : {});
+          this.damage(tg, p, W.dmg * mk, msg.w, W.slow ? { fz: W.slow } : {});
         } else if (W.type === 'hitscan' || W.type === 'rail') {
           if (!this.rateOk(p, msg.tg + msg.w, 0.6 / W.rate)) return;
           const n = Math.max(1, Math.min(W.pellets || 1, msg.n | 0));
-          this.damage(tg, p, W.dmg * n * (msg.hs ? W.hs : 1), msg.w, { hs: !!msg.hs });
+          this.damage(tg, p, W.dmg * n * (msg.hs ? W.hs : 1) * mk, msg.w, { hs: !!msg.hs });
         }
         break;
       }
@@ -356,14 +417,86 @@ export class HostLogic {
       }
       case 'bh': {
         const pr = p.proj.get(msg.id);
-        if (!pr || pr.w !== 'blackhole' || !Array.isArray(msg.p)) return;
+        if (!pr || (pr.w !== 'blackhole' && pr.w !== 'whitehole') || !Array.isArray(msg.p)) return;
         p.proj.delete(msg.id);
         const [x, y, z] = msg.p.map(Number);
         if (![x, y, z].every(Number.isFinite)) return;
-        const B = WEAPONS.blackhole.bh;
-        const h = { id: this.nextHole++, x: r2(x), y: r2(y), z: r2(z), by: id, born: this.time, dur: B.dur };
+        const white = pr.w === 'whitehole';
+        const P = white ? WEAPONS.whitehole.wh : WEAPONS.blackhole.bh;
+        const h = { id: this.nextHole++, k: white ? 'w' : 'b', x: r2(x), y: r2(y), z: r2(z), by: id, born: this.time, dur: P.dur };
         this.holes.push(h);
-        this.broadcast({ t: 'bh', id: h.id, p: [h.x, h.y, h.z], by: id, dur: B.dur, pid: msg.id });
+        this.broadcast({ t: 'bh', id: h.id, k: h.k, p: [h.x, h.y, h.z], by: id, dur: P.dur, pid: msg.id });
+        break;
+      }
+      case 'phit': {
+        // Testere bir oyuncunun içinden geçti (her testere her oyuncuya bir kez)
+        const pr = p.proj.get(msg.id);
+        const tg = this.players.get(msg.tg);
+        if (!pr || pr.w !== 'saw' || !tg || tg === p || !tg.alive || this.time - pr.t > 6) return;
+        if (Math.hypot(tg.x - p.x, tg.z - p.z) > 90) return;
+        pr.hits ||= new Set();
+        if (pr.hits.has(tg.id)) return;
+        pr.hits.add(tg.id);
+        this.damage(tg, p, WEAPONS.saw.dmg, 'saw');
+        break;
+      }
+      case 'tp': {
+        const W = WEAPONS.teleport;
+        if (!p.alive || !p.inv.has('teleport') || !Array.isArray(msg.to)) return;
+        const [x, y, z] = msg.to.map(Number);
+        if (![x, y, z].every(Number.isFinite) || Math.abs(x) > 60 || Math.abs(z) > 60 || y < -5 || y > 80) return;
+        if (Math.hypot(x - p.x, y - p.y, z - p.z) > W.range + 12) return;
+        if (!this.rateOk(p, 'tp', 0.6 / W.rate)) return;
+        this.releaseVehicle(p);
+        const from = [r2(p.x), r2(p.y), r2(p.z)];
+        p.x = x; p.y = y; p.z = z;
+        this.endProtection(p);
+        this.broadcast({ t: 'tp', id, from, to: [r2(x), r2(y), r2(z)] }, id);
+        // Işınlanma ezmesi: varılan noktada duran oyuncu ölür
+        for (const tg of this.players.values()) {
+          if (tg === p || !tg.alive) continue;
+          if (Math.hypot(tg.x - x, tg.z - z) < 0.9 && Math.abs(tg.y - y) < 1.6) this.damage(tg, p, W.telefrag, 'teleport');
+        }
+        break;
+      }
+      case 'mount': {
+        const v = this.vehicle(msg.v);
+        if (!v || !p.alive || p.veh || v.rider !== null) return;
+        if (Math.hypot(v.x - p.x, v.z - p.z) > VEH[v.kind].reach + 2.5 || Math.abs(v.y - p.y) > 4) return;
+        v.rider = id;
+        p.veh = v.id;
+        p.x = v.x; p.y = v.y + VEH[v.kind].seatOff; p.z = v.z;
+        this.broadcast({ t: 'mount', v: v.id, by: id });
+        break;
+      }
+      case 'dismount': {
+        const v = this.vehicle(msg.v);
+        if (!v || v.rider !== id) return;
+        let [x, y, z] = Array.isArray(msg.p) ? msg.p.map(Number) : [v.x, v.y, v.z];
+        if (![x, y, z].every(Number.isFinite) || Math.hypot(x - v.x, z - v.z) > 8 || Math.abs(y - v.y) > 6) [x, y, z] = [v.x, v.y, v.z];
+        const yaw = Number.isFinite(+msg.yaw) ? +msg.yaw : v.yaw;
+        this.parkVehicle(v, x, y, z, yaw, false);
+        break;
+      }
+      case 'ram': {
+        // Motosikletle çarpma / çinçillayla üstüne atlama
+        const v = p.veh ? this.vehicle(p.veh) : null;
+        const tg = this.players.get(msg.tg);
+        if (!v || !p.alive || !tg || tg === p || !tg.alive || v.kind !== msg.k) return;
+        const dx = tg.x - p.x, dz = tg.z - p.z, dist = Math.hypot(dx, dz);
+        if (dist > (v.kind === 'chin' ? 7 : 5) || Math.abs(tg.y - p.y) > 5) return;
+        if (!this.rateOk(p, 'ram' + tg.id, 0.8)) return;
+        const sp = Math.min(40, Math.abs(+msg.s || 0));
+        const inv = dist > 0.1 ? 1 / dist : 0;
+        if (v.kind === 'moto') {
+          if (sp < 8) return;
+          this.damage(tg, p, Math.max(15, Math.min(75, sp * 2.8)), 'moto',
+            { kb: [r2(dx * inv * sp * 0.7), 6, r2(dz * inv * sp * 0.7)] });
+        } else {
+          if (sp < 10) return;
+          this.damage(tg, p, Math.max(30, Math.min(70, sp * 2.5)), 'chin', { kb: [r2(dx * inv * 13), 9, r2(dz * inv * 13)] });
+        }
+        this.endProtection(p);
         break;
       }
       case 'pick': {
@@ -375,6 +508,9 @@ export class HostLogic {
           if (p.hp >= 100) return;
           p.hp = Math.min(100, p.hp + 50);
           this.broadcast({ t: 'heal', tg: id, hp: p.hp });
+        } else if (c.k === 'j') {
+          p.jet = true;
+          this.send(id, { t: 'give', item: 'jet' });
         } else {
           p.inv.add(c.w);
           this.send(id, { t: 'give', w: c.w, n: WEAPONS[c.w].ammo });
@@ -406,6 +542,7 @@ export class HostLogic {
           this.sys('Admin skorları sıfırladı.');
         }
         if (msg.a === 'crates') { for (let i = 0; i < 3; i++) this.spawnCrate(); }
+        if (msg.a === 'vreset') { for (const v of this.vehicles) this.resetVehicle(v); }
         break;
     }
   }
@@ -432,9 +569,11 @@ export class HostLogic {
     if (this.holeTimer >= 0.25) {
       const step = this.holeTimer;
       this.holeTimer = 0;
-      const B = WEAPONS.blackhole.bh;
       for (let i = this.holes.length - 1; i >= 0; i--) {
         const h = this.holes[i];
+        const white = h.k === 'w';
+        const B = white ? WEAPONS.whitehole.wh : WEAPONS.blackhole.bh;
+        const w = white ? 'whitehole' : 'blackhole';
         const owner = this.players.get(h.by) || null;
         const ended = this.time - h.born >= h.dur;
         for (const tg of this.players.values()) {
@@ -444,14 +583,21 @@ export class HostLogic {
             if (d < B.finalR) {
               const f = 1 - d / B.finalR;
               const inv = d > 0.1 ? 1 / d : 0;
-              this.damage(tg, owner, B.finalDmg * (0.4 + 0.6 * f), 'blackhole',
-                { kb: [r2((tg.x - h.x) * inv * 14), 9, r2((tg.z - h.z) * inv * 14)] });
+              const kb = B.finalKb || 14;
+              this.damage(tg, owner, B.finalDmg * (0.4 + 0.6 * f), w,
+                { kb: [r2((tg.x - h.x) * inv * kb), white ? 12 : 9, r2((tg.z - h.z) * inv * kb)] });
             }
           } else if (d < B.coreR) {
-            this.damage(tg, owner, B.dps * step, 'blackhole');
+            this.damage(tg, owner, B.dps * step, w);
           }
         }
         if (ended) this.holes.splice(i, 1);
+      }
+      // Terk edilen araçlar park yerine döner
+      for (const v of this.vehicles) {
+        if (v.rider !== null) continue;
+        const away = Math.hypot(v.x - v.home.x, v.z - v.home.z) > 3 || v.y < -10;
+        if (away && (this.time - v.idle > VEHICLE_RESET || v.y < -10)) this.resetVehicle(v);
       }
     }
 
@@ -462,7 +608,10 @@ export class HostLogic {
       const list = [];
       for (const p of this.players.values()) {
         if (!p.alive) continue;
-        list.push([p.id, r2(p.x), r2(p.y), r2(p.z), r2(p.yaw), r2(p.pitch), p.w, p.f, p.hp]);
+        const e = [p.id, r2(p.x), r2(p.y), r2(p.z), r2(p.yaw), r2(p.pitch), p.w, p.f, p.hp];
+        const v = p.veh ? this.vehicle(p.veh) : null;
+        if (v) e.push(v.id, r2(v.yaw));
+        list.push(e);
       }
       this.broadcast({ t: 'snap', p: list });
     }

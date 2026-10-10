@@ -145,6 +145,26 @@ function grass() {
 
 function crateFace(kind) {
   const S = 128, c = cnv(S), x = c.getContext('2d');
+  if (kind === 'j') {
+    // Jetpack kutusu: lacivert üzerine iki tüplü sırt çantası ve alevler
+    x.fillStyle = '#16243a'; x.fillRect(0, 0, S, S);
+    x.strokeStyle = '#3fa9ff'; x.lineWidth = 8; x.strokeRect(4, 4, S - 8, S - 8);
+    x.fillStyle = '#ff9a2a';
+    for (const cx of [44, 84]) {
+      x.beginPath(); x.moveTo(cx - 10, 86); x.lineTo(cx + 10, 86); x.lineTo(cx, 112); x.fill();
+    }
+    x.fillStyle = '#cfd8e3';
+    for (const cx of [44, 84]) {
+      x.beginPath();
+      x.roundRect ? x.roundRect(cx - 14, 26, 28, 60, 12) : x.rect(cx - 14, 26, 28, 60);
+      x.fill();
+    }
+    x.fillStyle = '#3fa9ff'; x.fillRect(56, 40, 16, 34);
+    noise(x, S, S, 10);
+    const t = toTex(c);
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    return t;
+  }
   if (kind === 'h') {
     x.fillStyle = '#eef2ee'; x.fillRect(0, 0, S, S);
     x.fillStyle = '#21b24b';
@@ -188,5 +208,6 @@ export function makeTextures() {
     grass: grass(),
     crateW: crateFace('w'),
     crateH: crateFace('h'),
+    crateJ: crateFace('j'),
   };
 }

@@ -340,6 +340,11 @@ export function buildMap(scene, quality = 'high') {
   contZ(-18, -46, 0, 'cGreen');
   contX(10, -47, 0, 'cRed');
 
+  // Motosiklet atlama rampaları (ucu havada biter; önlerinde uzun düz yol var)
+  B.ramp(-1.5, 0, 21, 1.5, 1.7, 27, 'z', 1, 'hazard'); // güney yolu
+  B.ramp(10, 0, -54.5, 16, 1.6, -51.5, 'x', 1, 'hazard'); // kuzey şerit, doğuya
+  B.ramp(13, 0, 51, 19.5, 1.5, 54, 'x', 1, 'hazard'); // güney şerit, doğuya
+
   // Tahta sandıklar (yığınlar)
   const crate = (x, z, n = 1) => {
     for (let k = 0; k < n; k++) B.cbox(x, k * 1.2, z, 1.2, 1.2, 1.2, 'wood');
@@ -441,7 +446,7 @@ export function buildMap(scene, quality = 'high') {
     [0, 52], [0, -53], [54, 14], [-54, -14], [54, -16], [-54, 16],
     [-32, -32], [32, -32], [-32, 32], [32, 32],
     [18, 24], [-18, -24], [24, -18], [-24, 18],
-    [-12, 0], [12, 0], [0, 25], [0, -25],
+    [-12, 0], [12, 0], [0, 19], [0, -25],
   ];
   const spawns = [];
   for (const [x, z] of cand) {
@@ -449,11 +454,22 @@ export function buildMap(scene, quality = 'high') {
     if (!world.overlapsPlayer(x, y, z, PLAYER.radius + 0.3)) spawns.push({ x, y, z });
   }
 
+  // ---------------- Araç park yerleri ----------------
+  const vehicleSpawns = [];
+  for (const [kind, x, z, yaw] of [
+    ['moto', -50, -44, Math.PI / 2], ['moto', 50, -44, -Math.PI / 2],
+    ['moto', -50, 44, Math.PI / 2], ['moto', 50, 44, -Math.PI / 2],
+    ['chin', 0, -45, Math.PI], ['chin', -20, 50, 0],
+  ]) {
+    vehicleSpawns.push({ kind, x, y: world.groundAt(x, z, 1), z, yaw });
+  }
+
   return {
     world,
     tex,
     meshes,
     spawns,
+    vehicleSpawns,
     minimap: drawMinimap(world),
     update(t) {
       beacon.material.color.setHSL(0.5 + Math.sin(t * 2) * 0.05, 1, 0.55 + Math.sin(t * 4) * 0.15);

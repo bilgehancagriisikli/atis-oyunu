@@ -230,6 +230,17 @@ kbd {
 #hp-fill { height: 100%; width: 100%; background: var(--ok); transition: width 0.15s; }
 #hp-text { min-width: 36px; text-align: right; font-size: 22px; }
 
+#jet { display: flex; align-items: center; gap: 8px; background: rgba(0, 0, 0, 0.45); padding: 5px 12px; border-radius: 10px; margin-bottom: 6px; }
+#jet .bar { flex: 1; height: 8px; background: rgba(255, 255, 255, 0.15); border-radius: 4px; overflow: hidden; }
+#jet-fill { height: 100%; width: 100%; background: #3fa9ff; }
+#jet.active #jet-fill { background: #ffb347; }
+.jet-icon { font-size: 14px; }
+#prompt {
+  position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 6px 14px; border-radius: 8px; font-size: 15px; white-space: nowrap;
+}
+
 #chat-log { max-height: 160px; overflow: hidden; margin-bottom: 8px; font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
 .chat-row { background: rgba(0, 0, 0, 0.35); padding: 2px 8px; border-radius: 5px; width: fit-content; max-width: 100%; word-break: break-word; transition: opacity 1s; font-weight: 600; }
 .chat-row.sys { color: #ffd78a; font-style: italic; }
@@ -305,6 +316,7 @@ kbd {
   .slot { font-size: 10px; padding: 2px 5px; }
   #chat-log { max-height: 80px; font-size: 11px; }
   #center-msg { font-size: 18px; }
+  #prompt { font-size: 12px; bottom: 26%; }
   h1 { font-size: 30px; }
   .panel { padding: 18px 16px; }
 }

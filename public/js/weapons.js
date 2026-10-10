@@ -1,53 +1,86 @@
 // Silah tanımları ve 3D modelleri.
 import * as THREE from 'three';
 
-// type: hitscan | projectile | beam | rail | chain
+// type: hitscan | projectile | beam | rail | chain | teleport
+// slot: 1-7 tuşları; aynı tuşa tekrar basınca gruptaki sonraki silaha geçilir
 export const WEAPONS = {
   pistol: {
-    name: 'Tabanca', type: 'hitscan', dmg: 18, hs: 2, rate: 4, spread: 0.01, range: 160,
+    name: 'Tabanca', slot: 1, type: 'hitscan', dmg: 18, hs: 2, rate: 4, spread: 0.01, range: 160,
     ammo: Infinity, color: 0xffd27a, sound: 'pistol', recoil: 0.05, weight: 0,
   },
   shotgun: {
-    name: 'Pompalı Tüfek', type: 'hitscan', pellets: 10, dmg: 9, hs: 1.5, rate: 1.1, spread: 0.075,
+    name: 'Pompalı Tüfek', slot: 2, type: 'hitscan', pellets: 10, dmg: 9, hs: 1.5, rate: 1.1, spread: 0.075,
     range: 60, ammo: 14, color: 0xffb060, sound: 'shotgun', recoil: 0.14, weight: 14,
   },
   minigun: {
-    name: 'Minigun', type: 'hitscan', dmg: 8, hs: 1.5, rate: 15, spread: 0.04, range: 130,
+    name: 'Minigun', slot: 2, type: 'hitscan', dmg: 8, hs: 1.5, rate: 15, spread: 0.04, range: 130,
     ammo: 180, color: 0xffe08a, sound: 'minigun', recoil: 0.018, spin: 0.35, weight: 12,
   },
   bazooka: {
-    name: 'Bazuka', type: 'projectile', proj: 'rocket', speed: 30, grav: 0, dmg: 110, radius: 6,
+    name: 'Bazuka', slot: 3, type: 'projectile', proj: 'rocket', speed: 30, grav: 0, dmg: 110, radius: 6,
     kb: 17, rate: 0.85, ammo: 6, color: 0xff6a2a, sound: 'rocket', recoil: 0.2, weight: 12,
   },
   grenade: {
-    name: 'Bomba Atar', type: 'projectile', proj: 'grenade', speed: 23, grav: 18, dmg: 90, radius: 5,
+    name: 'Bomba Atar', slot: 3, type: 'projectile', proj: 'grenade', speed: 23, grav: 18, dmg: 90, radius: 5,
     kb: 12, fuse: 1.6, rate: 1.4, ammo: 10, color: 0x9cff4a, sound: 'grenade', recoil: 0.1, weight: 10,
   },
   laser: {
-    name: 'Lazer Işını', type: 'beam', dmg: 7, tick: 0.1, range: 90, ammo: 100, drain: 22,
+    name: 'Lazer Işını', slot: 4, type: 'beam', dmg: 7, tick: 0.1, range: 90, ammo: 100, drain: 22,
     color: 0xff2244, sound: 'laser', weight: 12,
   },
   freeze: {
-    name: 'Dondurucu Işın', type: 'beam', dmg: 3, tick: 0.1, range: 45, ammo: 100, drain: 20,
+    name: 'Dondurucu Işın', slot: 4, type: 'beam', dmg: 3, tick: 0.1, range: 45, ammo: 100, drain: 20,
     color: 0x66e0ff, slow: 1.6, sound: 'freeze', weight: 9,
   },
   railgun: {
-    name: 'Raylı Top', type: 'rail', dmg: 95, hs: 1.5, rate: 0.7, range: 260, ammo: 6,
+    name: 'Raylı Top', slot: 4, type: 'rail', dmg: 95, hs: 1.5, rate: 0.7, range: 260, ammo: 6,
     color: 0x3aa0ff, sound: 'rail', recoil: 0.22, weight: 9,
   },
   tesla: {
-    name: 'Yıldırım Silahı', type: 'chain', dmg: [30, 20, 14], range: 38, cone: 0.26, chain: 11,
+    name: 'Yıldırım Silahı', slot: 5, type: 'chain', dmg: [30, 20, 14], range: 38, cone: 0.26, chain: 11,
     rate: 2.4, ammo: 30, color: 0xb9a6ff, sound: 'tesla', recoil: 0.06, weight: 10,
   },
   blackhole: {
-    name: 'Kara Delik Topu', type: 'projectile', proj: 'orb', speed: 15, grav: 0, ammo: 2,
+    name: 'Kara Delik Topu', slot: 6, type: 'projectile', proj: 'orb', speed: 15, grav: 0, ammo: 2,
     rate: 0.5, color: 0xb040ff, sound: 'orb', recoil: 0.16, weight: 5,
     bh: { dur: 4, radius: 13, pull: 30, dps: 24, coreR: 3, finalDmg: 45, finalR: 5.5 },
   },
+  // Kara deliğin tersi: herkesi dışarı fırlatır, sonunda patlar
+  whitehole: {
+    name: 'Beyaz Delik Topu', slot: 6, type: 'projectile', proj: 'worb', speed: 15, grav: 0, ammo: 2,
+    rate: 0.5, color: 0xfff1b8, sound: 'worb', recoil: 0.16, weight: 5,
+    wh: { dur: 3, radius: 15, push: 36, dps: 12, coreR: 4, finalDmg: 35, finalR: 7, finalKb: 22 },
+  },
+  // Döne döne giden: üç testere ekseni etrafında burgu gibi döner, oyuncuların içinden geçer
+  saw: {
+    name: 'Sarmal Testere', slot: 5, type: 'projectile', proj: 'saw', path: 'spiral', speed: 20, grav: 0,
+    blades: 3, spiralR: 0.9, omega: 13, life: 3, dmg: 26, ammo: 12, rate: 1.2,
+    color: 0xd8e0ea, sound: 'saw', recoil: 0.1, weight: 10,
+  },
+  // Zikzak çizerek giden enerji topu; bir rakibin yakınından geçince ya da bir yere değince patlar
+  zigzag: {
+    name: 'Zikzak Topu', slot: 3, type: 'projectile', proj: 'zig', path: 'zigzag', speed: 26, grav: 0,
+    amp: 1.2, period: 0.34, fuse: 0.9, dmg: 48, radius: 2.8, kb: 7, ammo: 10, rate: 2,
+    color: 0xd4ff3a, sound: 'zig', recoil: 0.08, weight: 10,
+  },
+  // Nişangahın gösterdiği yere ışınlar
+  teleport: {
+    name: 'Işınlanma Silahı', slot: 7, type: 'teleport', range: 120, ammo: 8, rate: 1.1,
+    color: 0x3ff0ff, sound: 'tp', recoil: 0.08, weight: 8, telefrag: 200,
+  },
 };
 
-// Tuş sırası (1..0)
-export const WEAPON_ORDER = ['pistol', 'shotgun', 'minigun', 'bazooka', 'grenade', 'laser', 'freeze', 'railgun', 'tesla', 'blackhole'];
+// Silah olmayan öldürme sebepleri (öldürme akışında görünen isimler)
+export const KILL_NAMES = { moto: 'Motosiklet', chin: 'Dev Çinçilla' };
+export function killName(w) {
+  return WEAPONS[w] ? WEAPONS[w].name : KILL_NAMES[w] || w;
+}
+
+// Liste / tekerlek sırası (tuş gruplarına göre)
+export const WEAPON_ORDER = [
+  'pistol', 'shotgun', 'minigun', 'bazooka', 'grenade', 'zigzag', 'laser', 'freeze', 'railgun',
+  'tesla', 'saw', 'blackhole', 'whitehole', 'teleport',
+];
 
 export function randomCrateWeapon() {
   const list = WEAPON_ORDER.filter((w) => WEAPONS[w].weight > 0);
@@ -216,6 +249,73 @@ export function buildWeaponModel(id) {
       r2.position.set(0, 0, 0);
       g.add(spin);
       muzzle.position.set(0, 0, -0.42);
+      break;
+    }
+    case 'whitehole': {
+      const W = lam(0xeae6da);
+      add(g, box(0.11, 0.11, 0.3), W, 0, -0.01, 0.08);
+      add(g, box(0.05, 0.13, 0.07), BLACK, 0, -0.1, 0.12, 0.25);
+      add(g, cylZ(0.05, 0.07, 0.16, 12), lam(0xc9a64a), 0, 0, -0.14);
+      glows.push(add(g, new THREE.SphereGeometry(0.09, 16, 12), glow(0xffffff), 0, 0, -0.3));
+      glows.push(add(g, torusZ(0.12, 0.012), glow(0xffd76a), 0, 0, -0.3));
+      spin = new THREE.Group();
+      spin.position.set(0, 0, -0.3);
+      const r2 = add(spin, torusZ(0.12, 0.008), glow(0xfff6d0), 0, 0, 0, Math.PI / 2);
+      glows.push(r2);
+      g.add(spin);
+      muzzle.position.set(0, 0, -0.42);
+      break;
+    }
+    case 'saw': {
+      add(g, box(0.1, 0.1, 0.3), lam(0x3b4652), 0, -0.01, 0.06);
+      add(g, box(0.05, 0.13, 0.07), BLACK, 0, -0.1, 0.1, 0.25);
+      add(g, cylZ(0.035, 0.05, 0.2, 10), METAL, 0, 0, -0.17);
+      add(g, box(0.02, 0.02, 0.2), lam(0xf2c230), 0.055, 0.02, 0.04);
+      spin = new THREE.Group();
+      spin.position.set(0, 0, -0.3);
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        const disc = new THREE.Group();
+        disc.position.set(Math.cos(a) * 0.07, Math.sin(a) * 0.07, 0);
+        add(disc, cylZ(0.045, 0.045, 0.01, 12), lam(0xd8e0ea), 0, 0, 0);
+        for (let k = 0; k < 6; k++) {
+          const b = (k / 6) * Math.PI * 2;
+          add(disc, box(0.014, 0.014, 0.01), lam(0xaab4c0), Math.cos(b) * 0.05, Math.sin(b) * 0.05, 0, 0, 0, b);
+        }
+        spin.add(disc);
+      }
+      g.add(spin);
+      muzzle.position.set(0, 0, -0.34);
+      break;
+    }
+    case 'zigzag': {
+      const G = lam(0x2f3a1a);
+      add(g, box(0.09, 0.1, 0.32), G, 0, 0, 0.05);
+      add(g, box(0.05, 0.13, 0.07), BLACK, 0, -0.1, 0.1, 0.25);
+      // Şimşek biçimli zikzak namlu
+      for (let i = 0; i < 4; i++) {
+        glows.push(add(g, box(0.02, 0.02, 0.1), glow(0xd4ff3a), (i % 2 ? -1 : 1) * 0.025, 0.02, -0.14 - i * 0.07, 0, (i % 2 ? 1 : -1) * 0.6));
+      }
+      add(g, box(0.07, 0.03, 0.3), G, 0, -0.03, -0.24);
+      glows.push(add(g, new THREE.SphereGeometry(0.035, 10, 8), glow(0xf4ffb0), 0, 0.02, -0.42));
+      muzzle.position.set(0, 0.02, -0.45);
+      break;
+    }
+    case 'teleport': {
+      const W = lam(0xdfe8f0);
+      add(g, box(0.08, 0.1, 0.3), W, 0, 0, 0.06);
+      add(g, box(0.05, 0.13, 0.07), BLACK, 0, -0.1, 0.1, 0.25);
+      add(g, cylZ(0.03, 0.04, 0.18, 10), DARK, 0, 0.01, -0.17);
+      glows.push(add(g, torusZ(0.075, 0.012), glow(0x3ff0ff), 0, 0.01, -0.3));
+      spin = new THREE.Group();
+      spin.position.set(0, 0.01, -0.3);
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        glows.push(add(spin, box(0.012, 0.05, 0.01), glow(0xa8ffff), Math.cos(a) * 0.035, Math.sin(a) * 0.035, 0, 0, 0, a));
+      }
+      g.add(spin);
+      add(g, box(0.02, 0.03, 0.2), glow(0x3ff0ff), 0.041, 0.0, 0.0);
+      muzzle.position.set(0, 0.01, -0.32);
       break;
     }
   }

@@ -4,6 +4,22 @@ import { buildWeaponModel } from './weapons.js';
 import { PLAYER } from './physics.js';
 
 const tmp = new THREE.Vector3();
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+
+let _flameTex = null;
+function flameTexture() {
+  if (_flameTex) return _flameTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.3, 'rgba(255,200,120,0.8)');
+  g.addColorStop(1, 'rgba(255,120,40,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  _flameTex = new THREE.CanvasTexture(c);
+  return _flameTex;
+}
 
 function nameTexture(name, color, hp) {
   const c = document.createElement('canvas');
@@ -48,6 +64,9 @@ export class Avatar {
     this.lastFire = -99;
     this.weaponId = null;
     this.weaponCache = {};
+    this.mountKind = null;
+    this.vyaw = 0;
+    this.targetVyaw = 0;
 
     const body = new THREE.MeshLambertMaterial({ color: info.color });
     const dark = new THREE.MeshLambertMaterial({ color: 0x24272c });
@@ -99,6 +118,25 @@ export class Avatar {
     this.gunHolder.scale.setScalar(1.3);
     this.arms.add(this.gunHolder);
 
+    // Jetpack (sırtta iki tüp + alevler)
+    this.jet = new THREE.Group();
+    const tankMat = new THREE.MeshLambertMaterial({ color: 0xcfd8e3 });
+    this.flames = [];
+    for (const sx of [-1, 1]) {
+      mk(new THREE.CylinderGeometry(0.1, 0.1, 0.48, 10), tankMat, sx * 0.13, 1.17, 0.3, this.jet);
+      mk(new THREE.ConeGeometry(0.08, 0.12, 8).rotateX(Math.PI), dark, sx * 0.13, 0.88, 0.3, this.jet);
+      const f = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: flameTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      }));
+      f.position.set(sx * 0.13, 0.7, 0.3);
+      f.scale.set(0.3, 0.55, 1);
+      this.jet.add(f);
+      this.flames.push(f);
+    }
+    mk(new THREE.BoxGeometry(0.2, 0.3, 0.1), new THREE.MeshLambertMaterial({ color: 0x3fa9ff }), 0, 1.17, 0.27, this.jet);
+    this.jet.visible = false;
+    root.add(this.jet);
+
     // Doğma koruma kalkanı
     this.bubble = new THREE.Mesh(
       new THREE.SphereGeometry(1.15, 16, 12),
@@ -137,6 +175,22 @@ export class Avatar {
     old.dispose();
   }
 
+  // Araca bindi / indi. vyaw: aracın yönü (binici kafasını ayrıca çevirebilir)
+  setMount(kind, vyaw) {
+    if (kind !== this.mountKind) {
+      this.mountKind = kind;
+      this.vyaw = vyaw;
+    }
+    this.targetVyaw = vyaw;
+  }
+
+  // Jetpack alev uçlarının dünya konumları (parçacıklar için)
+  jetNozzles(a, b) {
+    this.root.updateMatrixWorld(true);
+    this.flames[0].getWorldPosition(a);
+    this.flames[1].getWorldPosition(b);
+  }
+
   setTarget(x, y, z, yaw, pitch, flags) {
     this.target.set(x, y, z);
     this.targetYaw = yaw;
@@ -160,6 +214,8 @@ export class Avatar {
     this.root.rotation.set(0, yaw, 0);
     this.protUntil = protUntil;
     this.frozenUntil = 0;
+    this.mountKind = null;
+    this.flags = 0;
     this.setHp(100);
   }
 
@@ -200,21 +256,54 @@ export class Avatar {
     const before = tmp.copy(this.pos);
     this.pos.lerp(this.target, a);
     const moved = Math.hypot(this.pos.x - before.x, this.pos.z - before.z);
-    let dy = this.targetYaw - this.yaw;
-    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-    this.yaw += dy * a;
+    this.yaw += wrap(this.targetYaw - this.yaw) * a;
+    this.vyaw += wrap(this.targetVyaw - this.vyaw) * a;
     this.pitch += (this.targetPitch - this.pitch) * a;
+    this.pose(dt, now, moved);
+  }
+
+  // Kendi karakterimiz (üçüncü şahıs kamerası): ara değer yok, doğrudan konum
+  syncLocal(x, y, z, yaw, pitch, flags, mountKind, vyaw, dt, now) {
+    const moved = Math.hypot(x - this.pos.x, z - this.pos.z);
+    this.pos.set(x, y, z);
+    this.target.copy(this.pos);
+    this.yaw = this.targetYaw = yaw;
+    this.pitch = this.targetPitch = pitch;
+    this.flags = flags;
+    this.mountKind = mountKind;
+    this.vyaw = this.targetVyaw = vyaw;
+    this.pose(dt, now, moved);
+  }
+
+  pose(dt, now, moved) {
     this.root.position.copy(this.pos);
-    this.root.rotation.set(0, this.yaw, 0);
     this.upper.rotation.x = this.pitch * 0.85;
-    // Yürüme animasyonu
-    const speed = moved / Math.max(dt, 1e-4);
-    const onGround = (this.flags & 1) !== 0;
-    if (onGround && speed > 0.5) this.walk += moved * 2.6;
-    const amp = onGround ? Math.min(0.8, speed * 0.09) : 0.35;
-    const swing = onGround ? Math.sin(this.walk) * amp : amp;
-    this.legL.rotation.x = swing;
-    this.legR.rotation.x = onGround ? -swing : -amp * 0.4;
+    if (this.mountKind) {
+      // Araçta oturur: gövde araç yönünde, üst gövde bakış yönünde
+      this.root.rotation.set(0, this.vyaw, 0);
+      this.upper.rotation.y = wrap(this.yaw - this.vyaw);
+      const chin = this.mountKind === 'chin';
+      this.legL.rotation.set(chin ? 0.9 : 1.25, 0, chin ? -0.55 : -0.12);
+      this.legR.rotation.set(chin ? 0.9 : 1.25, 0, chin ? 0.55 : 0.12);
+    } else {
+      this.root.rotation.set(0, this.yaw, 0);
+      this.upper.rotation.y = 0;
+      // Yürüme animasyonu
+      const speed = moved / Math.max(dt, 1e-4);
+      const onGround = (this.flags & 1) !== 0;
+      if (onGround && speed > 0.5) this.walk += moved * 2.6;
+      const amp = onGround ? Math.min(0.8, speed * 0.09) : 0.35;
+      const swing = onGround ? Math.sin(this.walk) * amp : amp;
+      this.legL.rotation.set(swing, 0, 0);
+      this.legR.rotation.set(onGround ? -swing : -amp * 0.4, 0, 0);
+    }
+    // Jetpack: bit 4 = takılı, bit 8 = itiş
+    this.jet.visible = (this.flags & 4) !== 0;
+    const thrust = (this.flags & 8) !== 0;
+    for (const f of this.flames) {
+      f.visible = thrust;
+      if (thrust) f.scale.set(0.28 + Math.random() * 0.08, 0.5 + Math.random() * 0.25, 1);
+    }
     // Kalkan + donma
     this.bubble.visible = now < this.protUntil;
     if (this.bubble.visible) this.bubble.material.opacity = 0.12 + Math.sin(now * 12) * 0.06;

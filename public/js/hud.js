@@ -17,6 +17,7 @@ export class Hud {
       mini: $('minimap'), big: $('bigmap'), bigCanvas: $('bigmap-canvas'),
       chatLog: $('chat-log'), chatBox: $('chat-input-wrap'), chatInput: $('chat-input'),
       info: $('net-info'), prot: $('prot'), dmgDir: $('dmg-dir'), crosshair: $('crosshair'),
+      jet: $('jet'), jetFill: $('jet-fill'), prompt: $('prompt'),
     };
     this.miniCtx = this.el.mini.getContext('2d');
     this.bigCtx = this.el.bigCanvas.getContext('2d');
@@ -32,12 +33,12 @@ export class Hud {
   buildSlots() {
     this.el.slots.innerHTML = '';
     this.slotEls = {};
-    WEAPON_ORDER.forEach((w, i) => {
+    WEAPON_ORDER.forEach((w) => {
       const d = document.createElement('div');
       d.className = 'slot';
       d.style.setProperty('--c', hexColor(WEAPONS[w].color));
       const k = document.createElement('b');
-      k.textContent = String((i + 1) % 10);
+      k.textContent = String(WEAPONS[w].slot);
       const n = document.createElement('span');
       n.textContent = WEAPONS[w].name;
       d.append(k, n);
@@ -101,6 +102,27 @@ export class Hud {
     }
   }
 
+  // Jetpack yakıtı (fuel < 0: jetpack yok)
+  setJet(fuel, active) {
+    const v = fuel < 0 ? -1 : Math.round(fuel);
+    if (v !== this.lastJet) {
+      this.lastJet = v;
+      this.el.jet.classList.toggle('hidden', v < 0);
+      if (v >= 0) this.el.jetFill.style.width = v + '%';
+    }
+    if (active !== this.jetActive) {
+      this.jetActive = active;
+      this.el.jet.classList.toggle('active', active);
+    }
+  }
+
+  setPrompt(text) {
+    if (text === this.lastPrompt) return;
+    this.lastPrompt = text;
+    this.el.prompt.textContent = text;
+    this.el.prompt.classList.toggle('hidden', !text);
+  }
+
   setFrozen(v) {
     if (v !== this.frozen) { this.frozen = v; this.el.frost.classList.toggle('show', v); }
   }
@@ -162,7 +184,7 @@ export class Hud {
 
   // --------------------------------------------------------
   // Mini harita (oyuncu merkezli, dönen)
-  drawMinimap(mapCanvas, me, crates, blips, holes) {
+  drawMinimap(mapCanvas, me, crates, blips, holes, vehicles = []) {
     const ctx = this.miniCtx;
     const S = this.el.mini.width;
     const zm = 2.2; // piksel / metre
@@ -180,7 +202,7 @@ export class Hud {
     ctx.drawImage(mapCanvas, -(me.x + MINIMAP_RANGE) * zm, -(me.z + MINIMAP_RANGE) * zm,
       mapCanvas.width * zm / k0, mapCanvas.height * zm / k0);
     ctx.globalAlpha = 1;
-    this.drawMarkers(ctx, (x) => (x - me.x) * zm, (z) => (z - me.z) * zm, crates, blips, holes, 1);
+    this.drawMarkers(ctx, (x) => (x - me.x) * zm, (z) => (z - me.z) * zm, crates, blips, holes, 1, vehicles);
     ctx.restore();
     // Oyuncu oku
     ctx.save();
@@ -201,16 +223,30 @@ export class Hud {
     ctx.fillText('K', S / 2 + Math.cos(na) * (S / 2 - 12), S / 2 + Math.sin(na) * (S / 2 - 12));
   }
 
-  drawMarkers(ctx, tx, tz, crates, blips, holes, scale) {
+  drawMarkers(ctx, tx, tz, crates, blips, holes, scale, vehicles = []) {
+    for (const v of vehicles) {
+      ctx.fillStyle = v.k === 'chin' ? '#d9c7a8' : '#4fd8ff';
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (v.k === 'chin') ctx.arc(tx(v.x), tz(v.z), 5 * scale, 0, Math.PI * 2);
+      else {
+        // Motosiklet: eşkenar dörtgen
+        const x = tx(v.x), z = tz(v.z), r = 5 * scale;
+        ctx.moveTo(x, z - r); ctx.lineTo(x + r, z); ctx.lineTo(x, z + r); ctx.lineTo(x - r, z); ctx.closePath();
+      }
+      ctx.fill();
+      ctx.stroke();
+    }
     for (const c of crates) {
-      ctx.fillStyle = c.k === 'h' ? '#30e060' : '#ffb627';
+      ctx.fillStyle = c.k === 'h' ? '#30e060' : c.k === 'j' ? '#3fa9ff' : '#ffb627';
       ctx.fillRect(tx(c.x) - 4 * scale, tz(c.z) - 4 * scale, 8 * scale, 8 * scale);
       ctx.strokeStyle = '#000';
       ctx.lineWidth = 1;
       ctx.strokeRect(tx(c.x) - 4 * scale, tz(c.z) - 4 * scale, 8 * scale, 8 * scale);
     }
     for (const h of holes) {
-      ctx.fillStyle = 'rgba(176,64,255,0.6)';
+      ctx.fillStyle = h.k === 'w' ? 'rgba(255,240,180,0.75)' : 'rgba(176,64,255,0.6)';
       ctx.beginPath(); ctx.arc(tx(h.x), tz(h.z), 7 * scale, 0, Math.PI * 2); ctx.fill();
     }
     for (const b of blips) {
@@ -222,7 +258,7 @@ export class Hud {
   // Büyük harita (M)
   showBigMap(show) { this.el.big.classList.toggle('hidden', !show); }
 
-  drawBigMap(mapCanvas, me, crates, blips, holes, mePlayers) {
+  drawBigMap(mapCanvas, me, crates, blips, holes, vehicles = []) {
     const c = this.el.bigCanvas;
     const ctx = this.bigCtx;
     const S = c.width;
@@ -230,7 +266,7 @@ export class Hud {
     ctx.clearRect(0, 0, S, S);
     ctx.drawImage(mapCanvas, 0, 0, S, S);
     const tx = (x) => (x + MINIMAP_RANGE) * k, tz = (z) => (z + MINIMAP_RANGE) * k;
-    this.drawMarkers(ctx, tx, tz, crates, blips, holes, 1.5);
+    this.drawMarkers(ctx, tx, tz, crates, blips, holes, 1.5, vehicles);
     ctx.save();
     ctx.translate(tx(me.x), tz(me.z));
     ctx.rotate(-me.yaw);

@@ -273,6 +273,10 @@ $('crates-btn').addEventListener('click', (e) => {
   e.stopPropagation();
   host && host.receive(0, { t: 'admin', a: 'crates' });
 });
+$('vreset-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  host && host.receive(0, { t: 'admin', a: 'vreset' });
+});
 
 function refreshAdmin() {
   if (!host) return;

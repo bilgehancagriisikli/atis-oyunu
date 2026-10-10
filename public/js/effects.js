@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { glowTexture } from './textures.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
+const _spriteTmp = new THREE.Vector3();
 const tmpV = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
 
@@ -400,6 +401,7 @@ export class Effects {
   makeProjectile(kind) {
     const g = new THREE.Group();
     let glowSprite = null;
+    let spinner = null;
     if (kind === 'rocket') {
       const body = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 8).rotateX(Math.PI / 2),
         new THREE.MeshLambertMaterial({ color: 0x5d6b3a }));
@@ -409,14 +411,36 @@ export class Effects {
       g.add(body, tip);
     } else if (kind === 'grenade') {
       g.add(new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshLambertMaterial({ color: 0x4f7a2a })));
+    } else if (kind === 'saw') {
+      // Testere diski: uçuş yönüne dik, kendi ekseninde hızla döner
+      spinner = new THREE.Group();
+      const steel = new THREE.MeshLambertMaterial({ color: 0xd8e0ea });
+      spinner.add(new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.03, 18).rotateX(Math.PI / 2), steel));
+      const toothGeo = new THREE.BoxGeometry(0.08, 0.08, 0.03);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const tooth = new THREE.Mesh(toothGeo, steel);
+        tooth.position.set(Math.cos(a) * 0.3, Math.sin(a) * 0.3, 0);
+        tooth.rotation.z = a + Math.PI / 4;
+        spinner.add(tooth);
+      }
+      spinner.add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.05, 10).rotateX(Math.PI / 2),
+        new THREE.MeshLambertMaterial({ color: 0x2b2e33 })));
+      g.add(spinner);
+    } else if (kind === 'zig') {
+      const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), new THREE.MeshBasicMaterial({ color: 0xf6ffc8 }));
+      core.scale.z = 1.8;
+      g.add(core);
+    } else if (kind === 'worb') {
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(0.28, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffffff })));
     } else {
       g.add(new THREE.Mesh(new THREE.SphereGeometry(0.28, 14, 10), new THREE.MeshBasicMaterial({ color: 0x080210 })));
     }
+    const glowColor = { rocket: 0xffaa44, grenade: 0x9cff4a, saw: 0xfff0c0, zig: 0xd4ff3a, worb: 0xffd76a }[kind] ?? 0xb040ff;
     glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: this.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-      color: kind === 'rocket' ? 0xffaa44 : kind === 'grenade' ? 0x9cff4a : 0xb040ff,
+      map: this.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: glowColor,
     }));
-    glowSprite.scale.setScalar(kind === 'orb' ? 1.6 : 0.5);
+    glowSprite.scale.setScalar(kind === 'orb' || kind === 'worb' ? 1.6 : kind === 'zig' ? 1.1 : kind === 'saw' ? 0.6 : 0.5);
     if (kind === 'rocket') glowSprite.position.z = 0.3;
     g.add(glowSprite);
     this.scene.add(g);
@@ -431,6 +455,25 @@ export class Effects {
         } else if (kind === 'grenade') {
           glowSprite.material.opacity = Math.sin(t * 20) > 0 ? 1 : 0.2;
           if (Math.random() < 0.5) fx.add.spawn(p.x, p.y, p.z, 0, 0, 0, 0.2, 0.12, 0.02, fx.color(0x9cff4a), 0.6);
+        } else if (kind === 'saw') {
+          spinner.rotation.z += dt * 40;
+          if (Math.random() < 0.6) {
+            const v = randDir(tmpV).multiplyScalar(2.5);
+            fx.add.spawn(p.x, p.y, p.z, v.x, v.y, v.z, 0.25, 0.07, 0.02, fx.color(0xffd27a), 1, 8, 1);
+          }
+        } else if (kind === 'zig') {
+          // İz parçacıkları zikzak çizgisini gösterir
+          fx.add.spawn(p.x, p.y, p.z, 0, 0, 0, 0.45, 0.32, 0.05, fx.color(0xd4ff3a), 1);
+          if (Math.random() < 0.4) {
+            const v = randDir(tmpV).multiplyScalar(1.5);
+            fx.add.spawn(p.x, p.y, p.z, v.x, v.y, v.z, 0.3, 0.1, 0.02, fx.color(0xffffff), 1);
+          }
+        } else if (kind === 'worb') {
+          glowSprite.scale.setScalar(1.4 + Math.sin(t * 15) * 0.3);
+          for (let i = 0; i < 2; i++) {
+            const v = randDir(tmpV).multiplyScalar(0.3);
+            fx.add.spawn(p.x + v.x, p.y + v.y, p.z + v.z, v.x * 6, v.y * 6, v.z * 6, 0.35, 0.15, 0.02, fx.color(0xffe9a0), 1);
+          }
         } else {
           glowSprite.scale.setScalar(1.4 + Math.sin(t * 15) * 0.3);
           for (let i = 0; i < 2; i++) {
@@ -446,22 +489,24 @@ export class Effects {
     };
   }
 
-  // Kara delik
-  blackhole(pos, dur, radius) {
+  // Kara delik (white=true: beyaz delik, her şeyi dışarı iter)
+  blackhole(pos, dur, radius, white = false) {
     const g = new THREE.Group();
     g.position.copy(pos);
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.9, 20, 14), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+    const core = new THREE.Mesh(new THREE.SphereGeometry(white ? 0.7 : 0.9, 20, 14),
+      new THREE.MeshBasicMaterial({ color: white ? 0xffffff : 0x000000 }));
     g.add(core);
     const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: this.glowTex, color: 0x9b30ff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      map: this.glowTex, color: white ? 0xffe08a : 0x9b30ff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     }));
     halo.scale.setScalar(5);
     g.add(halo);
     const ringTex = ringTexture();
     const rings = [];
     for (let i = 0; i < 2; i++) {
+      const col = white ? (i ? 0xffffff : 0xffd76a) : (i ? 0xff80ff : 0xb040ff);
       const r = new THREE.Mesh(new THREE.RingGeometry(1.1, 3.2, 48), new THREE.MeshBasicMaterial({
-        map: ringTex, color: i ? 0xff80ff : 0xb040ff, transparent: true, side: THREE.DoubleSide,
+        map: ringTex, color: col, transparent: true, side: THREE.DoubleSide,
         depthWrite: false, blending: THREE.AdditiveBlending,
       }));
       r.rotation.x = -Math.PI / 2 + (i ? 0.5 : -0.2);
@@ -469,8 +514,76 @@ export class Effects {
       rings.push(r);
     }
     this.scene.add(g);
-    this.blackholes.push({ g, core, halo, rings, t: 0, dur, radius, pos: pos.clone() });
-    this.flash(pos, 0xb040ff, 60, 20, 0.5);
+    this.blackholes.push({ g, core, halo, rings, t: 0, dur, radius, pos: pos.clone(), white });
+    this.flash(pos, white ? 0xfff1b8 : 0xb040ff, 60, 20, 0.5);
+  }
+
+  // Işınlanma: iki noktada ışık sütunu
+  teleport(from, to, color = 0x3ff0ff) {
+    const c = this.color(color).clone();
+    for (const [p, out] of [[from, 1], [to, -1]]) {
+      for (let i = 0; i < 40; i++) {
+        const a = Math.random() * Math.PI * 2, r = 0.5 + Math.random() * 0.4;
+        this.add.spawn(p.x + Math.cos(a) * r, p.y + Math.random() * 2, p.z + Math.sin(a) * r,
+          Math.cos(a) * out * 2, (Math.random() - 0.3) * 3, Math.sin(a) * out * 2, 0.6, 0.18, 0.02, c, 1, 0, 1);
+      }
+      this.sprite(_spriteTmp.set(p.x, p.y + 1, p.z), color, 2.5, 0.3, 0.35);
+      this.flash(_spriteTmp, color, 30, 10, 0.3);
+    }
+    this.segs.add(from.clone().setY(from.y + 1), to.clone().setY(to.y + 1), color, 0.04, 0.25, 0.6);
+  }
+
+  // Jetpack alevi (aşağı doğru)
+  jet(pos) {
+    this.add.spawn(pos.x, pos.y, pos.z, (Math.random() - 0.5) * 0.6, -6 - Math.random() * 3, (Math.random() - 0.5) * 0.6,
+      0.22, 0.28, 0.05, this.color(Math.random() < 0.5 ? 0xffb347 : 0x6fd3ff), 1);
+    if (Math.random() < 0.3) {
+      this.smoke.spawn(pos.x, pos.y - 0.3, pos.z, (Math.random() - 0.5), -2, (Math.random() - 0.5), 0.8, 0.25, 0.9, this.color(0x999999), 0.35, -0.5, 1);
+    }
+  }
+
+  // Motosiklet egzoz dumanı / toz
+  exhaust(pos, speed) {
+    if (Math.random() > 0.15 + Math.min(0.6, speed / 40)) return;
+    this.smoke.spawn(pos.x, pos.y, pos.z, (Math.random() - 0.5) * 0.5, 0.5, (Math.random() - 0.5) * 0.5,
+      0.7, 0.18, 0.7, this.color(speed > 15 ? 0xb8ab90 : 0x777777), 0.35, -0.3, 1);
+  }
+
+  // Dev çinçilla yere iner: şok dalgası + toz
+  stomp(pos, radius) {
+    const c = this.color(0xc8bba0).clone();
+    for (let i = 0; i < 36; i++) {
+      const a = (i / 36) * Math.PI * 2;
+      this.smoke.spawn(pos.x + Math.cos(a) * 0.8, pos.y + 0.15, pos.z + Math.sin(a) * 0.8,
+        Math.cos(a) * radius * 2.2, 0.6, Math.sin(a) * radius * 2.2, 0.9, 0.7, 1.6, c, 0.55, 0, 2.5);
+    }
+    this.sprite(_spriteTmp.set(pos.x, pos.y + 0.3, pos.z), 0xfff3d0, 1, radius * 2, 0.25, 0.5);
+  }
+
+  // Işınlanma silahının hedef işareti (yerdeki halka + sütun)
+  makeMarker(color) {
+    const g = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.6, 32).rotateX(-Math.PI / 2), mat);
+    ring.position.y = 0.05;
+    g.add(ring);
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.8, 16, 1, true), new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.15, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    }));
+    col.position.y = 0.9;
+    g.add(col);
+    g.visible = false;
+    g.renderOrder = 5;
+    this.scene.add(g);
+    return {
+      show(p, t) {
+        g.visible = true;
+        g.position.copy(p);
+        ring.scale.setScalar(1 + Math.sin(t * 6) * 0.08);
+        ring.rotation.y = t;
+      },
+      hide() { g.visible = false; },
+    };
   }
 
   update(dt, camera, renderer) {
@@ -510,17 +623,27 @@ export class Effects {
       bh.rings[0].rotation.z += dt * 3;
       bh.rings[1].rotation.z -= dt * 4.5;
       bh.halo.scale.setScalar(5 + Math.sin(bh.t * 8) * 0.6);
-      const c = this.color(Math.random() < 0.5 ? 0xb040ff : 0xff80ff).clone();
-      for (let j = 0; j < 6; j++) {
-        const v = randDir(tmpV).multiplyScalar(bh.radius * (0.4 + Math.random() * 0.6));
-        const p = bh.pos;
-        this.add.spawn(p.x + v.x, p.y + v.y * 0.5, p.z + v.z, -v.x * 1.4 + v.z * 0.6, -v.y * 0.7, -v.z * 1.4 - v.x * 0.6,
-          0.7, 0.2, 0.05, c, 1, 0, 0);
+      const p = bh.pos;
+      if (bh.white) {
+        // Beyaz delik: parçacıklar merkezden dışarı saçılır
+        const c = this.color(Math.random() < 0.5 ? 0xffffff : 0xffd76a).clone();
+        for (let j = 0; j < 6; j++) {
+          const v = randDir(tmpV);
+          this.add.spawn(p.x + v.x * 0.6, p.y + v.y * 0.6, p.z + v.z * 0.6, v.x * bh.radius * 1.3 + v.z * 3, v.y * bh.radius * 0.6, v.z * bh.radius * 1.3 - v.x * 3,
+            0.7, 0.22, 0.05, c, 1, 0, 0);
+        }
+      } else {
+        const c = this.color(Math.random() < 0.5 ? 0xb040ff : 0xff80ff).clone();
+        for (let j = 0; j < 6; j++) {
+          const v = randDir(tmpV).multiplyScalar(bh.radius * (0.4 + Math.random() * 0.6));
+          this.add.spawn(p.x + v.x, p.y + v.y * 0.5, p.z + v.z, -v.x * 1.4 + v.z * 0.6, -v.y * 0.7, -v.z * 1.4 - v.x * 0.6,
+            0.7, 0.2, 0.05, c, 1, 0, 0);
+        }
       }
       if (bh.t >= bh.dur) {
         this.scene.remove(bh.g);
         bh.g.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-        this.explosion(bh.pos, 5, 0xc060ff);
+        if (bh.white) this.explosion(bh.pos, 7, 0xfff1b8); else this.explosion(bh.pos, 5, 0xc060ff);
         this.blackholes.splice(i, 1);
       }
     }

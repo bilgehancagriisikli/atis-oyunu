@@ -1,14 +1,19 @@
 // Basit fizik: eksen hizalı kutular + rampalar, karakter hareketi ve ışın testleri.
 
+// Yürüyen oyuncunun gövdesi. Araçlar aynı alanlarla kendi gövdelerini tanımlar (vehicles.js).
 export const PLAYER = {
   radius: 0.38,
   height: 1.8,
   eye: 1.62,
   step: 0.55,
+  airStep: 0.3,
   gravity: 24,
   jump: 8.4,
   speed: 7.2,
   sprint: 10.2,
+  groundAccel: 70,
+  airAccel: 18,
+  snap: 0.65,
 };
 
 export class World {
@@ -93,12 +98,12 @@ export class World {
     return h === -Infinity ? 0 : h;
   }
 
-  // Oyuncu kutusu bu konumda bir şeyle çakışıyor mu?
-  overlapsPlayer(x, y, z, r = PLAYER.radius) {
+  // Oyuncu (ya da araç) kutusu bu konumda bir şeyle çakışıyor mu?
+  overlapsPlayer(x, y, z, r = PLAYER.radius, h = PLAYER.height) {
     for (const c of this.colliders) {
       if (x + r <= c.minX || x - r >= c.maxX || z + r <= c.minZ || z - r >= c.maxZ) continue;
       const top = c.type === 'box' ? c.maxY : this.rampTopFoot(c, x, z, r);
-      if (top > y + 0.05 && c.minY < y + PLAYER.height) return true;
+      if (top > y + 0.05 && c.minY < y + h) return true;
     }
     return false;
   }
@@ -171,10 +176,9 @@ function convex(planes, ox, oy, oz, dx, dy, dz, maxT) {
 
 // ------------------------------------------------------------
 // Karakter hareketi. p: {x,y,z,vx,vy,vz,onGround}; y = ayak yüksekliği
-// wish: {x, z (birim yön), speed, jump}
+// wish: {x, z (birim yön), speed, jump}; o: gövde ayarları (varsayılan PLAYER)
 // ------------------------------------------------------------
-export function stepCharacter(world, p, wish, dt) {
-  const r = PLAYER.radius;
+export function stepCharacter(world, p, wish, dt, o = PLAYER) {
   const wl = Math.hypot(wish.x, wish.z);
   const wx = wl > 0 ? wish.x / wl : 0, wz = wl > 0 ? wish.z / wl : 0;
 
@@ -183,34 +187,41 @@ export function stepCharacter(world, p, wish, dt) {
     const tx = wx * wish.speed, tz = wz * wish.speed;
     const ddx = tx - p.vx, ddz = tz - p.vz;
     const dl = Math.hypot(ddx, ddz);
-    const maxD = 70 * dt;
+    const maxD = o.groundAccel * dt;
     if (dl <= maxD) { p.vx = tx; p.vz = tz; }
     else { p.vx += ddx / dl * maxD; p.vz += ddz / dl * maxD; }
-    if (wish.jump) { p.vy = PLAYER.jump; p.onGround = false; }
+    if (wish.jump) { p.vy = o.jump; p.onGround = false; p.jumped = true; }
   } else if (wl > 0) {
     // Havada: sınırlı kontrol, savrulma momentumu korunur
     const before = Math.hypot(p.vx, p.vz);
-    p.vx += wx * 18 * dt;
-    p.vz += wz * 18 * dt;
+    p.vx += wx * o.airAccel * dt;
+    p.vz += wz * o.airAccel * dt;
     const after = Math.hypot(p.vx, p.vz);
     const cap = Math.max(before, wish.speed);
     if (after > cap) { p.vx *= cap / after; p.vz *= cap / after; }
   }
+  moveBody(world, p, dt, o);
+}
 
-  const step = p.onGround ? PLAYER.step : 0.3;
-  moveAxis(world, p, 0, p.vx * dt, r, step);
-  moveAxis(world, p, 1, p.vz * dt, r, step);
+// Hızı verilmiş bir gövdeyi dünyada çarpışmalarla ilerletir (karakter + araçlar).
+// o.launch: rampanın ucundan havalanırken rampanın dikey hızı korunur (motosiklet atlayışları).
+export function moveBody(world, p, dt, o) {
+  const r = o.radius, H = o.height;
+  const step = p.onGround ? o.step : o.airStep;
+  const y0 = p.y;
+  moveAxis(world, p, 0, p.vx * dt, r, step, H);
+  moveAxis(world, p, 1, p.vz * dt, r, step, H);
 
   // Dikey
-  p.vy -= PLAYER.gravity * dt;
+  p.vy -= o.gravity * dt;
   if (p.vy < -45) p.vy = -45;
   let ny = p.y + p.vy * dt;
   if (p.vy > 0) {
-    const head = p.y + PLAYER.height;
+    const head = p.y + H;
     for (const c of world.colliders) {
       if (p.x + r <= c.minX || p.x - r >= c.maxX || p.z + r <= c.minZ || p.z - r >= c.maxZ) continue;
-      if (c.minY >= head - 0.05 && ny + PLAYER.height > c.minY) {
-        ny = c.minY - PLAYER.height;
+      if (c.minY >= head - 0.05 && ny + H > c.minY) {
+        ny = c.minY - H;
         p.vy = 0;
       }
     }
@@ -221,20 +232,23 @@ export function stepCharacter(world, p, wish, dt) {
     ny = ground;
     if (p.vy < 0) p.vy = 0;
     p.onGround = true;
-  } else if (wasGround && p.vy <= 0 && p.y - ground < 0.65) {
+  } else if (wasGround && p.vy <= 0 && p.y - ground < o.snap) {
     // Rampadan / basamaktan inerken zemine yapış
     ny = ground;
     p.vy = 0;
     p.onGround = true;
   } else {
     p.onGround = false;
+    if (o.launch && wasGround && !p.jumped && p.groundVy > 0) p.vy = Math.max(p.vy, p.groundVy);
   }
   p.y = ny;
+  p.groundVy = p.onGround ? (p.y - y0) / dt : 0;
+  p.jumped = false;
 }
 
-function moveAxis(world, p, axis, delta, r, step) {
+function moveAxis(world, p, axis, delta, r, step, H) {
   if (delta === 0) return;
-  const feet = p.y, head = p.y + PLAYER.height;
+  const feet = p.y, head = p.y + H;
   let nx = axis === 0 ? p.x + delta : p.x;
   let nz = axis === 1 ? p.z + delta : p.z;
   for (const c of world.colliders) {
@@ -294,4 +308,10 @@ export function pointNearPlayer(x, y, z, px, py, pz, extra) {
   const dx = x - px, dz = z - pz;
   const rr = 0.45 + extra;
   return dx * dx + dz * dz + dy * dy < rr * rr;
+}
+
+// Işın - eksen hizalı kutu (araç gövdesi gibi): t ya da null
+export function rayVsBox(ox, oy, oz, dx, dy, dz, maxT, minX, minY, minZ, maxX, maxY, maxZ) {
+  const h = slab({ minX, minY, minZ, maxX, maxY, maxZ }, ox, oy, oz, dx, dy, dz, maxT);
+  return h ? h.t : null;
 }
