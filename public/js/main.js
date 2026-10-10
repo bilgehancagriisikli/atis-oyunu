@@ -307,3 +307,9 @@ function refreshAdmin() {
   }
 }
 setInterval(() => { if (!$('pause').classList.contains('hidden')) refreshAdmin(); }, 1500);
+
+// Sekme gizliyken sesler (motor, jetpack, ışın döngüleri) susturulur
+document.addEventListener('visibilitychange', () => {
+  if (!sfx.ctx) return;
+  if (document.hidden) sfx.ctx.suspend(); else sfx.ctx.resume();
+});

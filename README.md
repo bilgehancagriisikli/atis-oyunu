@@ -9,26 +9,42 @@ kodu ve kendi isimleriyle doğrudan katılır.
 - **3D harita "Liman Üssü"**: 4 bina (içine girilebilir, çatılara rampa/merdivenle çıkılır),
   binaları birbirine bağlayan köprü, merkezde rampalı platform, konteyner yığınları, sandıklar,
   bariyerler, ağaçlar.
-- **Paraşütle rastgele düşen kutular**: turuncu kutulardan rastgele silah, yeşil kutulardan +50 can çıkar.
-- **10 silah** (herkes tabancayla doğar, diğerleri kutulardan gelir):
+- **Paraşütle rastgele düşen kutular**: turuncu kutulardan rastgele silah, yeşil kutulardan +50 can,
+  mavi kutulardan **jetpack** çıkar.
+- **Jetpack**: havadayken `Boşluk` tuşunu basılı tut, yukarı uçarsın. Yakıt yerde kendiliğinden dolar;
+  ölünce jetpack gider.
+- **Binilebilen araçlar** (yanına git, `E` ile bin / in; binince kamera üçüncü şahsa geçer, `V` ile değişir):
+  - **4 motosiklet**: `W`/`S` gaz-fren, `A`/`D` direksiyon, `Shift` nitro, `Boşluk` zıplama.
+    Atlama rampalarından uçar, çarptığı oyuncuya hasar verir. Sürerken ateş edebilirsin.
+  - **2 dev çinçilla** (gri tüylü, kocaman kulaklı): bakış yönünde zıplayarak gider, `Boşluk` ile
+    6 m'ye kadar zıplar, yüksekten indiği yerdeki oyuncuları ezer. Kapılardan sığmaz.
+  - Araçtaki oyuncuyu vurmak mümkün; araca isabet daha az hasar verir. Terk edilen araç 90 sn sonra
+    park yerine döner.
+- **14 silah** (herkes tabancayla doğar, diğerleri kutulardan gelir). Silahlar 1–7 tuşlarına gruplanmıştır;
+  aynı tuşa tekrar basınca gruptaki sonraki silaha geçilir:
 
   | Tuş | Silah | Özelliği |
   |---|---|---|
   | 1 | Tabanca | Sınırsız mermi, kafa vuruşu ×2 |
   | 2 | Pompalı Tüfek | 10 saçma, yakında öldürücü |
-  | 3 | Minigun | Önce ısınır, sonra mermi yağdırır (taşırken yavaşlarsın) |
-  | 4 | **Bazuka** | Patlayan roket, alan hasarı, savurma (roket zıplaması yapılabilir) |
-  | 5 | Bomba Atar | Sekip patlayan el bombaları |
-  | 6 | **Lazer Işını** | Basılı tuttukça sürekli ışın |
-  | 7 | Dondurucu Işın | Vurduğunu yavaşlatır, ekranı buzlanır |
-  | 8 | Raylı Top | Duvara kadar herkesi delip geçen ışın, sarmal iz |
-  | 9 | Yıldırım Silahı | Hedefe kilitlenir, yakındaki 2 kişiye daha sıçrar |
-  | 0 | **Kara Delik Topu** | Çarptığı yerde herkesi içine çeken kara delik açar |
+  | 2 | Minigun | Önce ısınır, sonra mermi yağdırır (taşırken yavaşlarsın) |
+  | 3 | **Bazuka** | Patlayan roket, alan hasarı, savurma (roket zıplaması yapılabilir) |
+  | 3 | Bomba Atar | Sekip patlayan el bombaları |
+  | 3 | **Zikzak Topu** | Zikzak çizerek gider, bir rakibin yakınından geçince patlar |
+  | 4 | **Lazer Işını** | Basılı tuttukça sürekli ışın |
+  | 4 | Dondurucu Işın | Vurduğunu yavaşlatır, ekranı buzlanır |
+  | 4 | Raylı Top | Duvara kadar herkesi delip geçen ışın, sarmal iz |
+  | 5 | Yıldırım Silahı | Hedefe kilitlenir, yakındaki 2 kişiye daha sıçrar |
+  | 5 | **Sarmal Testere** | Üç testere burgu gibi döne döne gider, oyuncuların içinden geçer |
+  | 6 | **Kara Delik Topu** | Çarptığı yerde herkesi içine çeken kara delik açar |
+  | 6 | **Beyaz Delik Topu** | Kara deliğin tersi: herkesi dışarı fırlatır, sonunda patlar |
+  | 7 | **Işınlanma Silahı** | Nişangahın gösterdiği yere ışınlar (yerde mavi hedef halkası görünür). Birinin üstüne ışınlanırsan onu ezersin |
 
-- **Mini harita** (sol üstte, dönen) ve **büyük harita** (`M`): kutular, kara delikler ve ateş eden düşmanlar görünür.
+- **Mini harita** (sol üstte, dönen) ve **büyük harita** (`M`): kutular, araçlar, kara/beyaz delikler ve
+  ateş eden düşmanlar görünür.
 - Skor tablosu, öldürme akışı, sohbet, vuruş işaretleri, hasar yönü göstergesi, doğma koruması.
 - Kodla üretilen sesler ve dokular: dışarıdan resim/ses dosyası yok.
-- **Admin paneli** (Esc menüsünde): oyuncu atma, skorları sıfırlama, kutu yağdırma.
+- **Admin paneli** (Esc menüsünde): oyuncu atma, skorları sıfırlama, kutu yağdırma, araçları park yerine gönderme.
 
 ## Erişim kodları
 
@@ -85,9 +101,12 @@ npx wrangler deploy        # wrangler.jsonc, public/ klasörünü yayınlar
 | Fare | Nişan |
 | Sol tık | Ateş (basılı tut) |
 | `Boşluk` | Zıpla |
-| `Shift` | Koş |
-| `1`–`0`, tekerlek | Silah seç |
+| `Shift` | Koş (motosiklette nitro) |
+| `1`–`7`, tekerlek | Silah seç (aynı tuş: gruptaki sonraki silah) |
 | `Q` | Önceki silah |
+| `E` | Araca bin / in |
+| `V` | Birinci / üçüncü şahıs kamera |
+| `Boşluk` (havada, basılı) | Jetpack ile uç |
 | `Tab` | Skor tablosu |
 | `M` | Büyük harita |
 | `T` / `Enter` | Sohbet |
@@ -134,7 +153,8 @@ public/
   js/main.js          giriş akışı, menüler, admin paneli
   js/net.js           PeerJS bağlantıları
   js/host.js          admin (sunucu) oyun mantığı
-  js/game.js          oyun döngüsü, oyuncu, silahlar
+  js/game.js          oyun döngüsü, oyuncu, silahlar, araç sürüşü, jetpack
+  js/vehicles.js      motosiklet ve dev çinçilla: modeller ve sürüş fiziği
   js/map.js           harita ve mini harita
   js/physics.js       çarpışma, hareket, ışın testleri
   js/weapons.js       silah tanımları ve modelleri

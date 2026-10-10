@@ -98,6 +98,7 @@ export class Avatar {
     mk(new THREE.BoxGeometry(0.4, 0.4, 0.12), dark, 0, 1.14, 0.2);
     // Üst gövde (bakış açısıyla eğilir)
     this.upper = new THREE.Group();
+    this.upper.rotation.order = 'YXZ'; // araçta yana/arkaya bakarken nişan ekseni doğru kalsın
     this.upper.position.set(0, 1.38, 0);
     root.add(this.upper);
     this.head = new THREE.Group();

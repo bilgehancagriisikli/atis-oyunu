@@ -75,9 +75,9 @@ export class World {
     return this.rampTop(c, x, pz);
   }
 
-  // maxY'nin altındaki en yüksek zemin
+  // maxY'nin altındaki en yüksek zemin (seçilen collider: this.lastSupport)
   supportHeight(x, z, r, maxY) {
-    let best = -Infinity;
+    let best = -Infinity, bestC = null;
     for (const c of this.colliders) {
       if (x + r <= c.minX || x - r >= c.maxX || z + r <= c.minZ || z - r >= c.maxZ) continue;
       let top;
@@ -87,8 +87,9 @@ export class World {
         const cz = Math.min(c.maxZ, Math.max(c.minZ, z));
         top = this.rampTop(c, cx, cz);
       }
-      if (top <= maxY && top > best) best = top;
+      if (top <= maxY && top > best) { best = top; bestC = c; }
     }
+    this.lastSupport = bestC;
     return best;
   }
 
@@ -204,11 +205,10 @@ export function stepCharacter(world, p, wish, dt, o = PLAYER) {
 }
 
 // Hızı verilmiş bir gövdeyi dünyada çarpışmalarla ilerletir (karakter + araçlar).
-// o.launch: rampanın ucundan havalanırken rampanın dikey hızı korunur (motosiklet atlayışları).
+// o.launch: rampanın ucundan havalanırken rampanın eğiminden gelen dikey hız korunur (motosiklet atlayışları).
 export function moveBody(world, p, dt, o) {
   const r = o.radius, H = o.height;
   const step = p.onGround ? o.step : o.airStep;
-  const y0 = p.y;
   moveAxis(world, p, 0, p.vx * dt, r, step, H);
   moveAxis(world, p, 1, p.vz * dt, r, step, H);
 
@@ -227,6 +227,7 @@ export function moveBody(world, p, dt, o) {
     }
   }
   const ground = world.supportHeight(p.x, p.z, r, p.y + step);
+  const sup = world.lastSupport;
   const wasGround = p.onGround;
   if (ny <= ground) {
     ny = ground;
@@ -239,11 +240,24 @@ export function moveBody(world, p, dt, o) {
     p.onGround = true;
   } else {
     p.onGround = false;
-    if (o.launch && wasGround && !p.jumped && p.groundVy > 0) p.vy = Math.max(p.vy, p.groundVy);
+    if (o.launch && wasGround && !p.jumped && p.launchVy > 0) p.vy = Math.max(p.vy, p.launchVy);
   }
   p.y = ny;
-  p.groundVy = p.onGround ? (p.y - y0) / dt : 0;
   p.jumped = false;
+  // Rampa üstündeyken eğim x rampa yönündeki hız = havalanma hızı. Basamaklar (kutular) sayılmaz;
+  // rampanın ucunu geçip ayak izi hâlâ rampadayken son değer korunur.
+  if (o.launch) {
+    if (p.onGround && sup && sup.type === 'ramp') {
+      const lo = sup.axis === 'x' ? sup.minX : sup.minZ, hi = sup.axis === 'x' ? sup.maxX : sup.maxZ;
+      const c = sup.axis === 'x' ? p.x : p.z;
+      if (sup !== p.rampSup) p.launchVy = 0;
+      if (c >= lo && c <= hi) p.launchVy = (sup.maxY - sup.minY) / (hi - lo) * (sup.axis === 'x' ? p.vx : p.vz) * sup.asc;
+      p.rampSup = sup;
+    } else {
+      p.launchVy = 0;
+      p.rampSup = null;
+    }
+  }
 }
 
 function moveAxis(world, p, axis, delta, r, step, H) {

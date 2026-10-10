@@ -460,7 +460,7 @@ export class Game {
           if (!me.alive || me.veh) break;
           this.ride = {
             kind: v.kind, x: v.x, y: v.y, z: v.z, vx: 0, vy: 0, vz: 0, yaw: v.yaw, onGround: true,
-            lean: 0, speed: 0, steer: 0, groundVy: 0, landed: 0,
+            lean: 0, speed: 0, steer: 0, launchVy: 0, landed: 0,
           };
           me.veh = v.id;
           me.jetting = false;
@@ -471,7 +471,10 @@ export class Game {
           this.hud.center(`${VEH[v.kind].name.toLocaleUpperCase('tr')}! [E] ile in`, '#ffd27a', 2);
         } else {
           const p = this.players.get(msg.by);
-          if (p && p.avatar) p.avatar.setMount(v.kind, v.yaw);
+          if (p && p.avatar) {
+            p.avatar.teleport(v.x, v.y + VEH[v.kind].seatOff, v.z, p.avatar.yaw);
+            p.avatar.setMount(v.kind, v.yaw);
+          }
         }
         break;
       }
@@ -648,7 +651,7 @@ export class Game {
       if (me.jetpack) {
         if (jump && !me.onGround && me.fuel > 0) {
           me.jetting = true;
-          me.vy = Math.min(me.vy + 40 * dt, 8);
+          if (me.vy < 8) me.vy = Math.min(me.vy + 40 * dt, 8); // savrulmayı frenlemesin
           me.fuel = Math.max(0, me.fuel - 22 * dt);
           body = JET_BODY;
           wish.speed = Math.max(wish.speed, 9.5);
@@ -839,7 +842,8 @@ export class Game {
     if (!pos) pos = [R.x, R.y + D.seatOff + 0.3, R.z];
     this.send({ t: 'dismount', v: v.id, p: [r2(R.x), r2(R.y), r2(R.z)], yaw: r3(R.yaw) });
     v.rider = null;
-    v.x = R.x; v.y = R.y; v.z = R.z; v.yaw = R.yaw;
+    const vg = this.world.supportHeight(R.x, R.z, D.body.radius, R.y + 0.5);
+    v.x = R.x; v.y = vg > -Infinity ? vg : R.y; v.z = R.z; v.yaw = R.yaw;
     me.x = pos[0]; me.y = pos[1]; me.z = pos[2];
     me.vx = R.vx * 0.4; me.vz = R.vz * 0.4; me.vy = 0;
     me.onGround = false;
@@ -863,9 +867,10 @@ export class Game {
           x = av.pos.x; y = av.pos.y - D.seatOff; z = av.pos.z; yaw = av.vyaw;
           onGround = (av.flags & 1) !== 0;
           const yr = wrap(yaw - v.pyaw) / Math.max(dt, 1e-4);
-          v.lean += (Math.max(-0.45, Math.min(0.45, -yr * Math.abs(v.speed) * 0.02)) - v.lean) * Math.min(1, dt * 6);
+          // Sağa dönüşte yaw azalır (yr < 0): motor sağa yatar, gidon sağa döner
+          v.lean += (Math.max(-0.45, Math.min(0.45, yr * Math.abs(v.speed) * 0.02)) - v.lean) * Math.min(1, dt * 6);
           lean = v.lean;
-          steer = Math.max(-1, Math.min(1, yr * 0.5));
+          steer = Math.max(-1, Math.min(1, -yr * 0.5));
         }
       }
       // İşaretli hız (geri giderken tekerlek ters döner)
@@ -876,6 +881,8 @@ export class Game {
       v.cx = x; v.cy = y; v.cz = z; v.cyaw = yaw;
       v.view.setPose(x, y, z, yaw);
       v.view.animate(dt, t, { speed: v.speed, onGround, steer, lean, ridden: v.rider != null });
+      // Birinci şahısta çinçillanın kafası / kulakları görüşü kapatmasın
+      if (v.kind === 'chin') v.view.m.head.visible = !(v.rider === this.myId && this.ride && !this.thirdPerson());
       if (v.kind === 'moto') {
         if (v.rider != null && !v.snd) v.snd = this.sfx.loop('moto', _a.set(x, y, z));
         else if (v.rider == null && v.snd) { v.snd.stop(); v.snd = null; }
@@ -997,6 +1004,7 @@ export class Game {
     me.cur = w;
     me.switchT = 0.25;
     me.spin = 0;
+    me.tpArmed = false;
     me.fireCd = Math.max(me.fireCd, 0.2);
     this.setViewWeapon(w);
     this.sfx.play('switch', null, 0.6);
@@ -1084,6 +1092,8 @@ export class Game {
   updateWeapon(dt, t, trigger) {
     const me = this.me;
     const W = WEAPONS[me.cur];
+    // Işınlanma silahı her atış için tetiğin yeniden basılmasını ister
+    if (!trigger) me.tpArmed = true;
     me.fireCd -= dt;
     if (me.switchT > 0) me.switchT -= dt;
     if (W.type === 'beam') {
@@ -1093,7 +1103,13 @@ export class Game {
     if (W.spin) {
       me.spin = trigger ? Math.min(1, me.spin + dt / W.spin) : Math.max(0, me.spin - dt * 1.5);
       if (trigger && me.spin >= 1 && me.fireCd <= 0) this.fire(W, t);
-    } else if (trigger && me.fireCd <= 0 && me.switchT <= 0) this.fire(W, t);
+    } else if (trigger && me.fireCd <= 0 && me.switchT <= 0) {
+      if (W.type === 'teleport') {
+        if (!me.tpArmed) return;
+        me.tpArmed = false;
+      }
+      this.fire(W, t);
+    }
   }
 
   fire(W, t) {
@@ -1435,13 +1451,14 @@ export class Game {
   }
 
   // Nokta bir oyuncuya (ya da bindiği araca) değiyor mu
-  pointHitsAvatar(av, x, y, z, extra) {
+  // boxExtra: araç kutusunun büyütmesi (zikzak tapası binicide büyük, araçta küçük olsun)
+  pointHitsAvatar(av, x, y, z, extra, boxExtra = extra) {
     const ap = av.pos;
     if (pointNearPlayer(x, y, z, ap.x, ap.y, ap.z, extra)) return true;
     if (!av.mountKind) return false;
     const V = VEH[av.mountKind], H = V.hit, by = ap.y - V.seatOff;
-    const hw = H.hw + extra;
-    return Math.abs(x - ap.x) < hw && Math.abs(z - ap.z) < hw && y > by + H.y0 - extra && y < by + H.y1 + extra;
+    const hw = H.hw + boxExtra;
+    return Math.abs(x - ap.x) < hw && Math.abs(z - ap.z) < hw && y > by + H.y0 - boxExtra && y < by + H.y1 + boxExtra;
   }
 
   // Sarmal testere / zikzak. true dönerse mermi silinir.
@@ -1468,7 +1485,7 @@ export class Game {
           const f = (k / n) * pathLen;
           const x = p.pos.x + seg.x * f, y = p.pos.y + seg.y * f, z = p.pos.z + seg.z * f;
           // Zikzak topunun yakınlık tapası var
-          if (!this.pointHitsAvatar(av, x, y, z, p.kind === 'zig' ? W.fuse : 0.2)) continue;
+          if (!this.pointHitsAvatar(av, x, y, z, p.kind === 'zig' ? W.fuse : 0.2, 0.2)) continue;
           if (p.kind === 'saw') {
             // Testere içinden geçer: her oyuncuya bir kez
             p.hits.add(q.id);

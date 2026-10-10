@@ -106,8 +106,10 @@ export class HostLogic {
     return this.vehicles.find((v) => v.id === id) || null;
   }
 
-  // Aracı bırak (inme, ölüm, çıkış, ışınlanma)
+  // Aracı bırak (inme, ölüm, çıkış, ışınlanma). Havada bırakılan araç altındaki zemine konur.
   parkVehicle(v, x, y, z, yaw, forced) {
+    const g = this.world.supportHeight(x, z, VEH[v.kind].body.radius, y + 0.5);
+    if (g > -Infinity) y = g;
     const rider = this.players.get(v.rider);
     if (rider) rider.veh = null;
     const by = v.rider;
@@ -332,7 +334,9 @@ export class HostLogic {
         if (!p.alive || !Array.isArray(msg.p)) return;
         const [x, y, z] = msg.p.map(Number);
         if (![x, y, z].every(Number.isFinite)) return;
-        p.x = x; p.y = y; p.z = z;
+        // Binmeden önce gönderilmiş (araç bilgisi olmayan) eski konumlar oyuncuyu eyerden indirmesin
+        const stale = p.veh && !(Array.isArray(msg.v) && msg.v[0] === p.veh);
+        if (!stale) { p.x = x; p.y = y; p.z = z; }
         if (Array.isArray(msg.r)) { p.yaw = +msg.r[0] || 0; p.pitch = +msg.r[1] || 0; }
         if (WEAPONS[msg.w] && p.inv.has(msg.w)) p.w = msg.w;
         p.f = msg.f | 0;
