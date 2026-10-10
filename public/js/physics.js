@@ -210,8 +210,10 @@ export function moveBody(world, p, dt, o) {
   const r = o.radius, H = o.height;
   const step = p.onGround ? o.step : o.airStep;
   p.bounced = 0;
-  moveAxis(world, p, 0, p.vx * dt, r, step, H, o.bounce || 0);
-  moveAxis(world, p, 1, p.vz * dt, r, step, H, o.bounce || 0);
+  // Yükselirken sekme yok: duvar boyunca kayıp kenara tırmanabilsin (zıplayarak çıkıntıya konma)
+  const bounce = p.onGround || p.vy <= 0 ? o.bounce || 0 : 0;
+  moveAxis(world, p, 0, p.vx * dt, r, step, H, bounce);
+  moveAxis(world, p, 1, p.vz * dt, r, step, H, bounce);
 
   // Dikey
   p.vy -= o.gravity * dt;

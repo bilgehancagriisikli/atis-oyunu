@@ -112,7 +112,7 @@ export class HostLogic {
 
   // Araca hasar (silah, patlama, gökten düşen cisim)
   damageVehicle(v, amount, attacker, w) {
-    if (!v || v.dead || amount <= 0) return;
+    if (!v || v.dead || !(amount > 0)) return; // NaN da reddedilir
     v.hp = Math.max(0, v.hp - amount);
     this.broadcast({ t: 'vdmg', v: v.id, hp: Math.round(v.hp), a: attacker ? attacker.id : -1 });
     if (v.hp <= 0) this.destroyVehicle(v, attacker, w);
@@ -221,6 +221,9 @@ export class HostLogic {
       holes: this.holes.map((h) => ({ id: h.id, k: h.k, p: [h.x, h.y, h.z], by: h.by, dur: h.dur - (this.time - h.born) })),
       vehicles: this.vehicles.map((v) => this.vehInfo(v)),
       meteors: this.meteors.map((m) => ({ id: m.id, s: m.s, p: [m.x, m.y, m.z], dur: METEOR.fall, age: r2(this.time - m.born) })),
+      cubes: [...this.players.values()].flatMap((q) => [...q.proj]
+        .filter(([, r]) => r.w === 'rubik' && r.o && this.time - r.t < WEAPONS.rubik.life)
+        .map(([pid, r]) => ({ id: pid, by: q.id, o: r.o, v: r.v, age: r2(this.time - r.t) }))),
     };
   }
 
@@ -428,7 +431,10 @@ export class HostLogic {
         if (W.type === 'projectile') {
           // Testere tek atışta birden çok mermi (ids) gönderir
           const ids = Array.isArray(msg.ids) ? msg.ids.slice(0, W.blades || 1) : msg.id != null ? [msg.id] : [];
-          for (const pid of ids) p.proj.set(pid, { w: msg.w, t: this.time });
+          const vec = (a) => Array.isArray(a) && a.length === 3 && a.every((c) => Number.isFinite(c)) ? a : null;
+          // Zeka küpleri uzun bekler: sonradan katılanlara gösterebilmek için atış verisi saklanır
+          const launch = msg.w === 'rubik' && vec(msg.o) && vec(msg.v) ? { o: msg.o, v: msg.v } : null;
+          for (const pid of ids) p.proj.set(pid, { w: msg.w, t: this.time, ...launch });
           // Sınır aşılınca en eski mermi silinir; uzun süre bekleyen zeka küpleri korunur
           while (p.proj.size > 40) {
             let victim = null;
@@ -474,11 +480,24 @@ export class HostLogic {
         // Araca isabet (binili ya da park halinde)
         const W = WEAPONS[msg.w];
         const v = this.vehicle(msg.v);
-        if (!p.alive || !W || !v || v.dead || !p.inv.has(msg.w)) return;
+        if (!W || !v || v.dead) return;
+        // Testere: her bıçak ayrı mermidir; phit gibi mermi kimliğiyle (her araca bir kez) doğrulanır.
+        // Son mermiyle silah envanterden düşmüş olabilir, bu yüzden envanter ve hız sınırı aranmaz.
+        if (msg.w === 'saw') {
+          const pr = p.proj.get(msg.id);
+          if (!pr || pr.w !== 'saw' || this.time - pr.t > 6 || Math.hypot(v.x - p.x, v.z - p.z) > 90) return;
+          pr.hits ||= new Set();
+          if (pr.hits.has('v' + v.id)) return;
+          pr.hits.add('v' + v.id);
+          this.damageVehicle(v, W.dmg, p, 'saw');
+          break;
+        }
+        if (!p.alive || !p.inv.has(msg.w)) return;
         if (Math.hypot(v.x - p.x, v.z - p.z) > (W.range || 100) + 10) return;
         if (!this.rateOk(p, 'v' + msg.v + msg.w, W.type === 'beam' ? W.tick * 0.6 : 0.6 / (W.rate || 2))) return;
         const n = Math.max(1, Math.min(W.pellets || W.maxHits || W.blades || 1, msg.n | 0));
         const per = Array.isArray(W.dmg) ? W.dmg[0] : W.dmg;
+        if (!Number.isFinite(per)) return; // hasarı olmayan silahlar (delikler, ışınlanma)
         this.damageVehicle(v, per * n, p, msg.w);
         break;
       }
@@ -502,6 +521,7 @@ export class HostLogic {
         if (!pr || !Array.isArray(msg.p)) return;
         p.proj.delete(msg.id);
         const W = WEAPONS[pr.w];
+        if (!W || !(W.radius > 0)) return; // patlamayan mermiler (testere)
         const [bx, by, bz] = msg.p.map(Number);
         if (![bx, by, bz].every(Number.isFinite)) return;
         this.broadcast({ t: 'boom', by: id, w: pr.w, p: [bx, by, bz], id: msg.id }, id);

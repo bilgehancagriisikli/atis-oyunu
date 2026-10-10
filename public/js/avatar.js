@@ -332,7 +332,8 @@ export class Avatar {
     this.scene.remove(this.root);
     this.root.traverse((o) => {
       if (o.geometry) o.geometry.dispose();
-      if (o.material && o.material.map) o.material.map.dispose();
+      // Zeka küpünün malzeme dizisi ve dokuları ortak önbellekte; dokunma
+      if (o.material && !Array.isArray(o.material) && o.material.map) o.material.map.dispose();
     });
   }
 }

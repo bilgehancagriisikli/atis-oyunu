@@ -83,7 +83,8 @@ function snubDodeca(mirror) {
 }
 
 const ICO = dedupe(evenPerms([0, 1, PHI]));
-const DODECA = dedupe([...signs([1, 1, 1]), ...evenPerms([0, 1 / PHI, PHI])]);
+// İkosahedronun duali olacak şekilde hizalı (yıldızlı cisimler için yüz merkezleri ikosahedron köşelerinde)
+const DODECA = dedupe([...signs([1, 1, 1]), ...evenPerms([0, PHI, 1 / PHI])]);
 
 // kind: 'c' = dışbükey (köşelerden), 's' = yıldız (hazır yüzler)
 export const SOLIDS = [
@@ -139,7 +140,8 @@ export function convexFaces(points) {
   return groups.map((g) => ({ sides: g.verts.size, tris: g.tris }));
 }
 
-// Pentagram yüzü: 5 uç üçgeni + ortadaki beşgen
+// Pentagram yüzü: 5 uç üçgeni + ortadaki beşgen. P: uç noktaları çember sırasıyla (yıldız sırasıyla değil);
+// iç köşe, komşu iki ucun açıortayında, çevrel yarıçapın 1/φ² katı uzaklıkta
 function pentagram(P) {
   const c = P.reduce((s, p) => s.add(p), new THREE.Vector3()).multiplyScalar(1 / 5);
   const R = P[0].distanceTo(c);
@@ -184,7 +186,7 @@ export function starFaces(kind) {
       const n = v.clone().normalize();
       const pos = dod.map((p) => ({ p, d: p.dot(n) })).filter((q) => q.d > 0.01).sort((a, b) => a.d - b.d);
       const ring = ringOrder(pos.slice(0, 5).map((q) => q.p), n);
-      faces.push({ sides: 5, tris: pentagram([ring[0], ring[2], ring[4], ring[1], ring[3]]) });
+      faces.push({ sides: 5, tris: pentagram(ring) });
     }
     return faces;
   }
@@ -196,7 +198,7 @@ export function starFaces(kind) {
       for (let i = 1; i < 4; i++) tris.push([ring[0], ring[i], ring[i + 1]]);
       faces.push({ sides: 5, tris });
     } else {
-      faces.push({ sides: 5, tris: pentagram([ring[0], ring[2], ring[4], ring[1], ring[3]]) });
+      faces.push({ sides: 5, tris: pentagram(ring) });
     }
   }
   return faces;

@@ -22,9 +22,10 @@ kodu ve kendi isimleriyle doğrudan katılır.
     çinçilladan daha hızlı koşar ama daha az zıplar. Hızla çarptığı oyuncuya hasar verir.
   - Sürerken bir yere çarpınca durmazsın, **sekersin** (yandan çarpınca yön değiştirir, kafa kafaya
     çarpınca geri seker).
-  - **Araçların ve hayvanların canı var** (sürerken sol altta görünür). İsabet binicinin değil aracın
-    canından düşer. Canı biten araç parçalanır, binici savrulur ve hasar alır; araç 20 sn sonra park
-    yerinde yeniden çıkar. Terk edilen araç 90 sn sonra park yerine döner.
+  - **Araçların ve hayvanların canı var** (sürerken sol altta, diğerlerinde aracın üstünde görünür).
+    Araca isabet aracın canından düşer; binicinin kendisi de ayrıca vurulabilir. Canı biten araç
+    parçalanır, binici savrulur ve hasar alır; araç 20 sn sonra park yerinde yeniden çıkar.
+    Terk edilen araç 90 sn sonra park yerine döner.
 - **17 silah** (herkes tabanca ve elmas kılıçla doğar, diğerleri tuğlalardan gelir). Silahlar 1–9 tuşlarına
   gruplanmıştır; aynı tuşa tekrar basınca gruptaki sonraki silaha geçilir:
 

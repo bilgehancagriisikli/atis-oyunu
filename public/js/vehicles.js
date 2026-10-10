@@ -327,12 +327,22 @@ export class VehicleView {
     this.bar.visible = false;
     this.bar.renderOrder = 6;
     this.root.add(this.bar);
+    this.barShow = false;
+    this.barHidden = false;
     scene.add(this.root);
+  }
+
+  // Binildiğinde çubuk binicinin başının üstüne çıkar; kendi aracımızda gizli (HUD'da gösterilir)
+  placeBar(ridden, hidden) {
+    this.bar.position.y = ridden ? VEH[this.kind].seatOff + 2.2 : VEH[this.kind].barY;
+    this.barHidden = hidden;
+    this.bar.visible = this.barShow && !hidden;
   }
 
   setHp(hp, max) {
     const frac = Math.round((hp / max) * 40) / 40;
-    this.bar.visible = hp < max && hp > 0;
+    this.barShow = hp < max && hp > 0;
+    this.bar.visible = this.barShow && !this.barHidden;
     if (frac === this.barFrac) return;
     this.barFrac = frac;
     const old = this.bar.material.map;

@@ -33,6 +33,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const MOTO_COLORS = [0xd23b2b, 0x2f6db5, 0x2fa84f, 0xf2c230];
 const CRATE_COLORS = { h: 0x30e060, j: 0x3fa9ff, w: 0xffb627 };
+const RUBIK_DT = 1 / 60; // zeka küpü fizik adımı
 const BRICK_Y = 0.36; // Lego tuğlasının gövde merkezi yüksekliği
 const RIDE_RAM = { moto: 9, ham: 11 }; // bu hızın üstünde çarpılan oyuncu hasar alır
 // Jetpack ile havadayken daha iyi yön kontrolü
@@ -62,14 +63,15 @@ function labelTexture(text, fam) {
   x.lineWidth = 8;
   x.strokeStyle = 'rgba(0,0,0,0.8)';
   x.font = 'bold 44px system-ui, sans-serif';
-  x.strokeText(text, 256, 50);
+  // Uzun isimler (ör. 'Kesik Yirmiyüzlü (futbol topu)') kesilmesin diye en fazla 490 px'e sıkıştırılır
+  x.strokeText(text, 256, 50, 490);
   x.fillStyle = '#ffe6b0';
-  x.fillText(text, 256, 50);
+  x.fillText(text, 256, 50, 490);
   x.font = 'bold 28px system-ui, sans-serif';
   x.lineWidth = 6;
-  x.strokeText(fam + ' cismi', 256, 100);
+  x.strokeText(fam + ' cismi', 256, 100, 490);
   x.fillStyle = '#ff9d5c';
-  x.fillText(fam + ' cismi', 256, 100);
+  x.fillText(fam + ' cismi', 256, 100, 490);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -242,6 +244,7 @@ export class Game {
     for (const h of welcome.holes || []) this.addHole(h);
     for (const v of welcome.vehicles || []) this.addVehicle(v);
     for (const m of welcome.meteors || []) this.addMeteor(m);
+    for (const c of welcome.cubes || []) this.addRestingCube(c);
     const mine = this.players.get(this.myId);
     this.selfAv = new Avatar(this.scene, { id: this.myId, name: mine ? mine.name : '', color: mine ? mine.color : 0xffffff });
     this.selfAv.tag.visible = false;
@@ -363,9 +366,14 @@ export class Game {
   removePlayer(id) {
     const p = this.players.get(id);
     if (!p) return;
-    if (p.avatar) p.avatar.dispose();
-    this.stopRemoteBeam(id);
     this.players.delete(id);
+    this.stopRemoteBeam(id);
+    // Ayrılanın mermileri (bekleyen zeka küpleri) artık patlamayacak
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const q = this.projectiles[i];
+      if (q.owner === id) { q.fx.dispose(); this.projectiles.splice(i, 1); }
+    }
+    if (p.avatar) p.avatar.dispose();
   }
 
   pname(id) {
@@ -472,7 +480,8 @@ export class Game {
           this.stopJetSound();
           this.marker.hide();
           this.stopBeam();
-          const txt = !killer || msg.a === msg.tg ? 'Kendini vurdun!' : `${killer.name} seni ${wn} ile öldürdü`;
+          // Saldırgan yoksa (gökten düşen cisim, araç patlaması) silahın adı söylenir
+          const txt = msg.a === msg.tg ? 'Kendini vurdun!' : !killer ? `${wn} seni öldürdü` : `${killer.name} seni ${wn} ile öldürdü`;
           this.hud.showDeath(txt);
           this.sfx.play('death');
         } else {
@@ -1015,6 +1024,7 @@ export class Game {
       v.px = x; v.pz = z; v.pyaw = yaw;
       v.cx = x; v.cy = y; v.cz = z; v.cyaw = yaw;
       v.view.setPose(x, y, z, yaw);
+      v.view.placeBar(v.rider != null, v.rider === this.myId);
       v.view.animate(dt, t, { speed: v.speed, onGround, steer, lean, ridden: v.rider != null });
       // Birinci şahısta çinçillanın kafası / kulakları görüşü kapatmasın
       if (v.kind === 'chin') v.view.m.head.visible = !(v.rider === this.myId && this.ride && !this.thirdPerson());
@@ -1309,7 +1319,12 @@ export class Game {
       const start = o.clone().addScaledVector(base, dist);
       start.y -= 0.12;
       const vel = base.clone().multiplyScalar(W.speed);
-      if (W.proj === 'rubik') vel.y += 3.5; // el bombası gibi kavisli atış
+      if (W.proj === 'rubik') {
+        vel.y += 3.5; // el bombası gibi kavisli atış
+        // Uzak oyuncuların aldığı yuvarlanmış değerlerle aynı yoldan gitsin
+        start.fromArray(v3(start));
+        vel.fromArray(v3(vel));
+      }
       this.addProjectile({ id, w, local: true, pos: start, vel, owner: this.myId });
       this.send({ t: 'fire', w, o: v3(start), v: v3(vel), id });
     } else if (W.type === 'chain') {
@@ -1793,7 +1808,7 @@ export class Game {
           if (!this.pointHitsVehicle(v, x, y, z, 0.2)) continue;
           if (p.kind === 'saw') {
             p.hits.add('v' + v.id);
-            this.send({ t: 'vhit', v: v.id, w: p.w, n: 1 });
+            this.send({ t: 'vhit', v: v.id, w: p.w, n: 1, id: p.id });
             this.fx.impact(_c.set(x, y, z), _d.set(0, 1, 0), 0xffd27a);
             this.sfx.play('sawhit', _c, 0.8);
           } else zigAt = new THREE.Vector3(x, y, z);
@@ -1855,8 +1870,20 @@ export class Game {
         continue;
       }
       if (p.stopped) continue;
-      // Yerde duran zeka küpü patlatılmayı bekler
-      if (p.rest) { p.fx.trail(dt, t); continue; }
+      if (p.kind === 'rubik') {
+        // Yerde duran zeka küpü patlatılmayı bekler (değmeyle patlamaz)
+        // Sabit 1/60 sn adımlar: aynı atış verisiyle her oyuncuda aynı yere düşer (FPS'ten bağımsız)
+        p.acc = (p.acc || 0) + dt;
+        let impact = 0;
+        while (p.acc >= RUBIK_DT && !p.rest) { p.acc -= RUBIK_DT; impact = Math.max(impact, this.stepRubik(p, RUBIK_DT, W)); }
+        if (impact > 2) this.sfx.play('cubehit', p.pos, 0.5);
+        p.fx.obj.position.copy(p.pos);
+        const sp = p.vel.length();
+        p.fx.spinner.rotation.x += dt * sp * 2.5;
+        p.fx.spinner.rotation.z += dt * sp * 1.7;
+        p.fx.trail(dt, t);
+        continue;
+      }
       p.vel.y -= (W.grav || 0) * dt;
       const step = p.vel.length() * dt;
       const dir = _a.copy(p.vel).normalize();
@@ -1867,8 +1894,8 @@ export class Game {
         // Yol boyunca 0.3 m aralıklarla kontrol (düşük FPS'te oyuncunun içinden geçmesin)
         const pathLen = hit ? Math.min(step, hit.t) : step;
         const n = Math.max(1, Math.ceil(pathLen / 0.3));
-        // Oyuncu ya da araç (zeka küpü değmeyle patlamaz)
-        const targets = p.kind === 'rubik' ? [] : [
+        // Oyuncu ya da araç
+        const targets = [
           ...[...this.players.values()].filter((q) => q.avatar && q.avatar.alive).map((q) => (x, y, z) => this.pointHitsAvatar(q.avatar, x, y, z, 0.15)),
           ...[...this.vehicles.values()].map((v) => (x, y, z) => this.pointHitsVehicle(v, x, y, z, 0.15)),
         ];
@@ -1885,24 +1912,7 @@ export class Game {
         }
       }
       let explodeAt = null;
-      if (p.kind === 'rubik') {
-        // Seker, yuvarlanır, durur; sağ tıkla (ya da süre bitince) patlar
-        if (hit) {
-          const n = _c.set(hit.nx, hit.ny, hit.nz);
-          p.pos.addScaledVector(dir, Math.max(0, hit.t - 0.05)).addScaledVector(n, 0.05);
-          const vn = p.vel.dot(n);
-          p.vel.addScaledVector(n, -2 * vn).multiplyScalar(0.42);
-          if (n.y > 0.6) {
-            p.vel.x *= 0.7; p.vel.z *= 0.7;
-            if (p.vel.length() < 1.5) {
-              p.rest = true;
-              p.vel.set(0, 0, 0);
-              p.pos.y += 0.1;
-            }
-          }
-          if (Math.abs(vn) > 2) this.sfx.play('cubehit', p.pos, 0.5);
-        } else p.pos.copy(next);
-      } else if (p.kind === 'grenade') {
+      if (p.kind === 'grenade') {
         if (hit) {
           const n = _c.set(hit.nx, hit.ny, hit.nz);
           p.pos.addScaledVector(dir, Math.max(0, hit.t - 0.05)).addScaledVector(n, 0.05);
@@ -1920,11 +1930,7 @@ export class Game {
       } else p.pos.copy(next);
 
       p.fx.obj.position.copy(p.pos);
-      if (p.kind === 'rubik') {
-        const sp = p.vel.length();
-        p.fx.spinner.rotation.x += dt * sp * 2.5;
-        p.fx.spinner.rotation.z += dt * sp * 1.7;
-      } else if (p.vel.lengthSq() > 0.01) p.fx.obj.lookAt(_d.copy(p.pos).sub(p.vel));
+      if (p.vel.lengthSq() > 0.01) p.fx.obj.lookAt(_d.copy(p.pos).sub(p.vel));
       p.fx.trail(dt, t);
 
       if (explodeAt) {
@@ -1939,6 +1945,41 @@ export class Game {
         }
       }
     }
+  }
+
+  // Zeka küpü: seker, yuvarlanır, durur; sağ tıkla (ya da süre bitince) patlar. Çarpma hızını döndürür.
+  stepRubik(p, dt, W) {
+    p.vel.y -= W.grav * dt;
+    const step = p.vel.length() * dt;
+    if (step < 1e-6) return 0;
+    const dir = _a.copy(p.vel).normalize();
+    const hit = this.world.raycast(p.pos.x, p.pos.y, p.pos.z, dir.x, dir.y, dir.z, step + 0.1);
+    if (!hit) { p.pos.addScaledVector(p.vel, dt); return 0; }
+    const n = _c.set(hit.nx, hit.ny, hit.nz);
+    p.pos.addScaledVector(dir, Math.max(0, hit.t - 0.05)).addScaledVector(n, 0.05);
+    const vn = p.vel.dot(n);
+    p.vel.addScaledVector(n, -2 * vn).multiplyScalar(0.42);
+    if (n.y > 0.6) {
+      p.vel.x *= 0.7; p.vel.z *= 0.7;
+      if (p.vel.length() < 1.5) {
+        p.rest = true;
+        p.vel.set(0, 0, 0);
+        p.pos.y += 0.1;
+      }
+    }
+    return Math.abs(vn);
+  }
+
+  // Sonradan katılan oyuncu: önceden atılmış zeka küpünü atıştan bu yana ileri sararak yerine koy
+  addRestingCube(c) {
+    const W = WEAPONS.rubik;
+    const ok = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+    if (!ok(c.o) || !ok(c.v) || !(c.age >= 0) || this.projectiles.some((q) => q.id === c.id)) return;
+    const p = { id: c.id, w: 'rubik', local: false, owner: c.by, pos: new THREE.Vector3().fromArray(c.o), vel: new THREE.Vector3().fromArray(c.v) };
+    this.addProjectile(p);
+    p.t = Math.min(c.age, W.life);
+    for (let k = Math.floor(p.t / RUBIK_DT); k > 0 && !p.rest; k--) this.stepRubik(p, RUBIK_DT, W);
+    p.fx.obj.position.copy(p.pos);
   }
 
   detonate(p, pos) {
