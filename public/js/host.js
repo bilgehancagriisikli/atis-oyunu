@@ -2,8 +2,9 @@
 // Hareket her oyuncunun kendi tarayıcısında hesaplanır; hasar ve eşyalar burada onaylanır.
 import { CONFIG } from './config.js';
 import { hashAccessCode } from './sha256.js';
-import { WEAPONS, randomCrateWeapon } from './weapons.js';
+import { WEAPONS, randomCrateWeapon, STARTER } from './weapons.js';
 import { VEH } from './vehicles.js';
+import { POLY_COUNT } from './polyhedra.js';
 
 export const PLAYER_COLORS = [
   0xe74c3c, 0x3498db, 0x2ecc71, 0xf1c40f, 0x9b59b6, 0x1abc9c,
@@ -14,6 +15,9 @@ export const CRATE_FALL_SPEED = 5;
 const RESPAWN_TIME = 3;
 const SPAWN_PROTECT = 2;
 const VEHICLE_RESET = 90; // terk edilen araç bu kadar saniye sonra park yerine döner
+const VEHICLE_RESPAWN = 20; // patlayan araç bu kadar saniye sonra park yerinde yeniden çıkar
+// Gökten düşen cisim
+export const METEOR = { fall: 3.2, height: 55, radius: 7, dmg: 75, kb: 16, every: [18, 32] };
 
 const r2 = (v) => Math.round(v * 100) / 100;
 
@@ -38,7 +42,11 @@ export class HostLogic {
     this.worker = null;
     this.vehicles = map.vehicleSpawns.map((v, i) => ({
       id: i + 1, kind: v.kind, x: v.x, y: v.y, z: v.z, yaw: v.yaw, rider: null, idle: 0, home: { ...v },
+      hp: VEH[v.kind].hp, dead: false, respawnAt: 0,
     }));
+    this.meteors = [];
+    this.nextMeteor = 1;
+    this.meteorTimer = 20;
   }
 
   // --------------------------------------------------------
@@ -99,7 +107,71 @@ export class HostLogic {
   }
 
   vehInfo(v) {
-    return { id: v.id, k: v.kind, p: [r2(v.x), r2(v.y), r2(v.z)], yaw: r2(v.yaw), r: v.rider };
+    return { id: v.id, k: v.kind, p: [r2(v.x), r2(v.y), r2(v.z)], yaw: r2(v.yaw), r: v.rider, hp: Math.round(v.hp), dead: v.dead ? 1 : 0 };
+  }
+
+  // Araca hasar (silah, patlama, gökten düşen cisim)
+  damageVehicle(v, amount, attacker, w) {
+    if (!v || v.dead || amount <= 0) return;
+    v.hp = Math.max(0, v.hp - amount);
+    this.broadcast({ t: 'vdmg', v: v.id, hp: Math.round(v.hp), a: attacker ? attacker.id : -1 });
+    if (v.hp <= 0) this.destroyVehicle(v, attacker, w);
+  }
+
+  // Araç parçalanır: binici fırlar ve hasar alır, araç bir süre sonra park yerinde çıkar
+  destroyVehicle(v, attacker, w) {
+    const rider = v.rider !== null ? this.players.get(v.rider) : null;
+    if (rider) this.releaseVehicle(rider);
+    v.dead = true;
+    v.respawnAt = this.time + VEHICLE_RESPAWN;
+    this.broadcast({ t: 'vdead', v: v.id, p: [r2(v.x), r2(v.y), r2(v.z)] });
+    if (rider && rider.alive) this.damage(rider, attacker, 35, w || 'vboom', { kb: [0, 12, 0] });
+  }
+
+  reviveVehicle(v) {
+    v.dead = false;
+    v.hp = VEH[v.kind].hp;
+    v.rider = null;
+    v.x = v.home.x; v.y = v.home.y; v.z = v.home.z; v.yaw = v.home.yaw;
+    v.idle = this.time;
+    this.broadcast({ t: 'vspawn', v: v.id, p: [v.x, v.y, v.z], yaw: r2(v.yaw), hp: v.hp });
+  }
+
+  // Patlama alan hasarı araçlara da işler
+  splashVehicles(bx, by, bz, radius, maxDmg, attacker, w) {
+    for (const v of this.vehicles) {
+      if (v.dead) continue;
+      const H = VEH[v.kind].hit;
+      const d = Math.hypot(v.x - bx, v.y + (H.y0 + H.y1) / 2 - by, v.z - bz);
+      if (d >= radius + H.hw) continue;
+      const f = Math.max(0, 1 - Math.max(0, d - H.hw) / radius);
+      this.damageVehicle(v, maxDmg * Math.pow(f, 0.8), attacker, w);
+    }
+  }
+
+  // Gökten rastgele bir cisim düşer (önce yere uyarı halkası çıkar)
+  spawnMeteor(atX, atZ) {
+    const x = r2(atX ?? (Math.random() * 2 - 1) * 54);
+    const z = r2(atZ ?? (Math.random() * 2 - 1) * 54);
+    const y = r2(this.world.groundAt(x, z, 60));
+    const m = { id: this.nextMeteor++, s: Math.floor(Math.random() * POLY_COUNT), x, y, z, born: this.time };
+    this.meteors.push(m);
+    this.broadcast({ t: 'met', id: m.id, s: m.s, p: [x, y, z], dur: METEOR.fall, age: 0 });
+  }
+
+  meteorImpact(m) {
+    const w = 'poly' + m.s;
+    for (const tg of this.players.values()) {
+      if (!tg.alive) continue;
+      const cx = tg.x - m.x, cy = tg.y + 0.9 - m.y, cz = tg.z - m.z;
+      const d = Math.hypot(cx, cy, cz);
+      if (d >= METEOR.radius) continue;
+      const f = 1 - d / METEOR.radius;
+      const inv = d > 0.1 ? 1 / d : 0;
+      this.damage(tg, null, METEOR.dmg * Math.pow(f, 0.7), w,
+        { kb: [r2(cx * inv * METEOR.kb * f), r2(METEOR.kb * 0.6 * f + 3), r2(cz * inv * METEOR.kb * f)] });
+    }
+    this.splashVehicles(m.x, m.y + 0.5, m.z, METEOR.radius, METEOR.dmg * 1.2, null, w);
   }
 
   vehicle(id) {
@@ -148,6 +220,7 @@ export class HostLogic {
       crates: [...this.crates.values()].map((c) => this.crateInfo(c)),
       holes: this.holes.map((h) => ({ id: h.id, k: h.k, p: [h.x, h.y, h.z], by: h.by, dur: h.dur - (this.time - h.born) })),
       vehicles: this.vehicles.map((v) => this.vehInfo(v)),
+      meteors: this.meteors.map((m) => ({ id: m.id, s: m.s, p: [m.x, m.y, m.z], dur: METEOR.fall, age: r2(this.time - m.born) })),
     };
   }
 
@@ -244,7 +317,7 @@ export class HostLogic {
     p.alive = true;
     p.hp = 100;
     p.jet = false;
-    p.inv = new Set(['pistol']);
+    p.inv = new Set(STARTER);
     p.w = 'pistol';
     p.prot = this.time + SPAWN_PROTECT;
     p.respawnAt = 0;
@@ -356,7 +429,12 @@ export class HostLogic {
           // Testere tek atışta birden çok mermi (ids) gönderir
           const ids = Array.isArray(msg.ids) ? msg.ids.slice(0, W.blades || 1) : msg.id != null ? [msg.id] : [];
           for (const pid of ids) p.proj.set(pid, { w: msg.w, t: this.time });
-          while (p.proj.size > 40) p.proj.delete(p.proj.keys().next().value);
+          // Sınır aşılınca en eski mermi silinir; uzun süre bekleyen zeka küpleri korunur
+          while (p.proj.size > 40) {
+            let victim = null;
+            for (const [k, v] of p.proj) if (v.w !== 'rubik') { victim = k; break; }
+            p.proj.delete(victim ?? p.proj.keys().next().value);
+          }
         }
         this.broadcast({ ...msg, by: id }, id);
         break;
@@ -379,7 +457,29 @@ export class HostLogic {
           if (!this.rateOk(p, msg.tg + msg.w, 0.6 / W.rate)) return;
           const n = Math.max(1, Math.min(W.pellets || 1, msg.n | 0));
           this.damage(tg, p, W.dmg * n * (msg.hs ? W.hs : 1) * mk, msg.w, { hs: !!msg.hs });
+        } else if (W.type === 'melee') {
+          // Sunucudaki konumlar biraz geriden gelir; menzile pay bırakılır
+          if (Math.hypot(tg.x - p.x, tg.y - p.y, tg.z - p.z) > W.range + 2) return;
+          if (!this.rateOk(p, msg.tg + msg.w, 0.6 / W.rate)) return;
+          this.endProtection(p);
+          this.damage(tg, p, W.dmg, msg.w);
+        } else if (W.type === 'fractal') {
+          if (!this.rateOk(p, msg.tg + msg.w, 0.6 / W.rate)) return;
+          const n = Math.max(1, Math.min(W.maxHits, msg.n | 0));
+          this.damage(tg, p, W.dmg * n, msg.w);
         }
+        break;
+      }
+      case 'vhit': {
+        // Araca isabet (binili ya da park halinde)
+        const W = WEAPONS[msg.w];
+        const v = this.vehicle(msg.v);
+        if (!p.alive || !W || !v || v.dead || !p.inv.has(msg.w)) return;
+        if (Math.hypot(v.x - p.x, v.z - p.z) > (W.range || 100) + 10) return;
+        if (!this.rateOk(p, 'v' + msg.v + msg.w, W.type === 'beam' ? W.tick * 0.6 : 0.6 / (W.rate || 2))) return;
+        const n = Math.max(1, Math.min(W.pellets || W.maxHits || W.blades || 1, msg.n | 0));
+        const per = Array.isArray(W.dmg) ? W.dmg[0] : W.dmg;
+        this.damageVehicle(v, per * n, p, msg.w);
         break;
       }
       case 'zap': {
@@ -417,6 +517,7 @@ export class HostLogic {
           const kb = [r2(cx * inv * W.kb * f), r2((d > 0.1 ? cy * inv : 1) * W.kb * f + W.kb * 0.35 * f), r2(cz * inv * W.kb * f)];
           this.damage(tg, p, dmg, pr.w, { kb });
         }
+        this.splashVehicles(bx, by, bz, W.radius, W.dmg, p, pr.w);
         break;
       }
       case 'bh': {
@@ -465,7 +566,7 @@ export class HostLogic {
       }
       case 'mount': {
         const v = this.vehicle(msg.v);
-        if (!v || !p.alive || p.veh || v.rider !== null) return;
+        if (!v || v.dead || !p.alive || p.veh || v.rider !== null) return;
         if (Math.hypot(v.x - p.x, v.z - p.z) > VEH[v.kind].reach + 2.5 || Math.abs(v.y - p.y) > 4) return;
         v.rider = id;
         p.veh = v.id;
@@ -492,9 +593,10 @@ export class HostLogic {
         if (!this.rateOk(p, 'ram' + tg.id, 0.8)) return;
         const sp = Math.min(40, Math.abs(+msg.s || 0));
         const inv = dist > 0.1 ? 1 / dist : 0;
-        if (v.kind === 'moto') {
+        if (v.kind === 'moto' || v.kind === 'ham') {
+          // Hızla çarpma (motosiklet / avurtlak)
           if (sp < 8) return;
-          this.damage(tg, p, Math.max(15, Math.min(75, sp * 2.8)), 'moto',
+          this.damage(tg, p, Math.max(15, Math.min(70, sp * (v.kind === 'ham' ? 2.4 : 2.8))), v.kind,
             { kb: [r2(dx * inv * sp * 0.7), 6, r2(dz * inv * sp * 0.7)] });
         } else {
           if (sp < 10) return;
@@ -524,7 +626,8 @@ export class HostLogic {
         break;
       }
       case 'empty':
-        if (msg.w !== 'pistol') p.inv.delete(msg.w);
+        if (STARTER.includes(msg.w)) return;
+        p.inv.delete(msg.w);
         if (p.w === msg.w) p.w = 'pistol';
         break;
       case 'chat': {
@@ -546,7 +649,10 @@ export class HostLogic {
           this.sys('Admin skorları sıfırladı.');
         }
         if (msg.a === 'crates') { for (let i = 0; i < 3; i++) this.spawnCrate(); }
-        if (msg.a === 'vreset') { for (const v of this.vehicles) this.resetVehicle(v); }
+        if (msg.a === 'vreset') {
+          for (const v of this.vehicles) { if (v.dead) this.reviveVehicle(v); else this.resetVehicle(v); }
+        }
+        if (msg.a === 'meteor') this.spawnMeteor();
         break;
     }
   }
@@ -595,13 +701,31 @@ export class HostLogic {
             this.damage(tg, owner, B.dps * step, w);
           }
         }
-        if (ended) this.holes.splice(i, 1);
+        if (ended) {
+          this.splashVehicles(h.x, h.y, h.z, B.finalR, B.finalDmg, owner, w);
+          this.holes.splice(i, 1);
+        }
       }
+      // Patlayan araçlar park yerinde yeniden çıkar
+      for (const v of this.vehicles) if (v.dead && this.time >= v.respawnAt) this.reviveVehicle(v);
       // Terk edilen araçlar park yerine döner
       for (const v of this.vehicles) {
-        if (v.rider !== null) continue;
+        if (v.rider !== null || v.dead) continue;
         const away = Math.hypot(v.x - v.home.x, v.z - v.home.z) > 3 || v.y < -10;
         if (away && (this.time - v.idle > VEHICLE_RESET || v.y < -10)) this.resetVehicle(v);
+      }
+    }
+
+    // Gökten düşen cisimler
+    this.meteorTimer -= dt;
+    if (this.meteorTimer <= 0) {
+      this.meteorTimer = METEOR.every[0] + Math.random() * (METEOR.every[1] - METEOR.every[0]);
+      this.spawnMeteor();
+    }
+    for (let i = this.meteors.length - 1; i >= 0; i--) {
+      if (this.time - this.meteors[i].born >= METEOR.fall) {
+        this.meteorImpact(this.meteors[i]);
+        this.meteors.splice(i, 1);
       }
     }
 

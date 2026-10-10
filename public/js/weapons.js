@@ -1,12 +1,17 @@
 // Silah tanımları ve 3D modelleri.
 import * as THREE from 'three';
 
-// type: hitscan | projectile | beam | rail | chain | teleport
-// slot: 1-7 tuşları; aynı tuşa tekrar basınca gruptaki sonraki silaha geçilir
+// type: hitscan | projectile | beam | rail | chain | teleport | melee | fractal
+// slot: 1-9 tuşları; aynı tuşa tekrar basınca gruptaki sonraki silaha geçilir
 export const WEAPONS = {
   pistol: {
     name: 'Tabanca', slot: 1, type: 'hitscan', dmg: 18, hs: 2, rate: 4, spread: 0.01, range: 160,
     ammo: Infinity, color: 0xffd27a, sound: 'pistol', recoil: 0.05, weight: 0,
+  },
+  // Yakın dövüş: Minecraft elmas kılıcı. Tabanca gibi her doğuşta hazır gelir.
+  sword: {
+    name: 'Elmas Kılıç', slot: 1, type: 'melee', dmg: 45, reach: 2.9, arc: 0.8, maxTargets: 3, rate: 2.2, range: 3.5,
+    ammo: Infinity, color: 0x4aedd9, sound: 'swoosh', recoil: 0, weight: 0,
   },
   shotgun: {
     name: 'Pompalı Tüfek', slot: 2, type: 'hitscan', pellets: 10, dmg: 9, hs: 1.5, rate: 1.1, spread: 0.075,
@@ -63,6 +68,16 @@ export const WEAPONS = {
     amp: 1.2, period: 0.34, fuse: 0.9, dmg: 48, radius: 2.8, kb: 7, ammo: 10, rate: 2,
     color: 0xd4ff3a, sound: 'zig', recoil: 0.08, weight: 10,
   },
+  // 3x3x3 zeka küpü el bombası: sol tık atar, sağ tık atılan tüm küpleri patlatır
+  rubik: {
+    name: 'Zeka Küpü Bombası', slot: 8, type: 'projectile', proj: 'rubik', speed: 15, grav: 20, dmg: 85, radius: 5.5,
+    kb: 14, life: 25, rate: 1.6, ammo: 5, color: 0xff3b3b, sound: 'throw', recoil: 0.04, weight: 9,
+  },
+  // Tek çizgi atar; çizgi ilerledikçe ağaç gibi dallanır. Her dal isabeti ayrı hasar verir.
+  fractal: {
+    name: 'Fraktal Silahı', slot: 9, type: 'fractal', dmg: 20, maxHits: 4, depth: 5, len: 8, ratio: 0.78, angle: 0.55,
+    range: 40, rate: 1.1, ammo: 15, color: 0x7df9ff, sound: 'fractal', recoil: 0.12, weight: 9,
+  },
   // Nişangahın gösterdiği yere ışınlar
   teleport: {
     name: 'Işınlanma Silahı', slot: 7, type: 'teleport', range: 120, ammo: 8, rate: 1.1,
@@ -71,16 +86,23 @@ export const WEAPONS = {
 };
 
 // Silah olmayan öldürme sebepleri (öldürme akışında görünen isimler)
-export const KILL_NAMES = { moto: 'Motosiklet', chin: 'Dev Çinçilla' };
+export const KILL_NAMES = { moto: 'Motosiklet', chin: 'Dev Çinçilla', ham: 'Türk Avurtlağı', vboom: 'Araç Patlaması' };
+let polyNames = [];
+export function setPolyNames(names) { polyNames = names; }
 export function killName(w) {
-  return WEAPONS[w] ? WEAPONS[w].name : KILL_NAMES[w] || w;
+  if (WEAPONS[w]) return WEAPONS[w].name;
+  if (typeof w === 'string' && w.startsWith('poly')) return polyNames[+w.slice(4)] || 'Gökten Düşen Cisim';
+  return KILL_NAMES[w] || w;
 }
 
 // Liste / tekerlek sırası (tuş gruplarına göre)
 export const WEAPON_ORDER = [
-  'pistol', 'shotgun', 'minigun', 'bazooka', 'grenade', 'zigzag', 'laser', 'freeze', 'railgun',
-  'tesla', 'saw', 'blackhole', 'whitehole', 'teleport',
+  'pistol', 'sword', 'shotgun', 'minigun', 'bazooka', 'grenade', 'zigzag', 'laser', 'freeze', 'railgun',
+  'tesla', 'saw', 'blackhole', 'whitehole', 'teleport', 'rubik', 'fractal',
 ];
+
+// Her doğuşta verilen, hiç bitmeyen silahlar
+export const STARTER = ['pistol', 'sword'];
 
 export function randomCrateWeapon() {
   const list = WEAPON_ORDER.filter((w) => WEAPONS[w].weight > 0);
@@ -119,6 +141,91 @@ const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 // Z ekseni boyunca silindir (r1: arka/+Z, r2: ön/-Z)
 const cylZ = (r1, r2, len, seg = 10) => new THREE.CylinderGeometry(r1, r2, len, seg).rotateX(Math.PI / 2);
 const torusZ = (r, t) => new THREE.TorusGeometry(r, t, 6, 14);
+
+// Minecraft elmas kılıcı: 16x16 piksel resmin 1 piksel kalınlığında kabartması
+const SWORD_PIXELS = [
+  '.............KKK',
+  '............KWDK',
+  '...........KWDdK',
+  '..........KWDdK.',
+  '.........KWDdK..',
+  '........KWDdK...',
+  '.......KWDdK....',
+  '..KK..KWDdK.....',
+  '..KdKKWDdK......',
+  '...KdWDdK.......',
+  '...KdDdK........',
+  '....KbdKK.......',
+  '...KbKKdK.......',
+  '.KKbK..KK.......',
+  'KBbK............',
+  'KKK.............',
+];
+const SWORD_COLORS = { K: 0x0b3d34, W: 0xb4fff2, D: 0x4aedd9, d: 0x23b39b, b: 0x6b4f2a, B: 0x4a3415 };
+
+function mergeBoxes(list) {
+  // list: BoxGeometry'ler (indeksli, konumlandırılmış) -> tek geometri
+  let vc = 0, ic = 0;
+  for (const g of list) { vc += g.attributes.position.count; ic += g.index.count; }
+  const pos = new Float32Array(vc * 3), nor = new Float32Array(vc * 3), idx = new Uint32Array(ic);
+  let vo = 0, io = 0;
+  for (const g of list) {
+    pos.set(g.attributes.position.array, vo * 3);
+    nor.set(g.attributes.normal.array, vo * 3);
+    const src = g.index.array;
+    for (let k = 0; k < src.length; k++) idx[io + k] = src[k] + vo;
+    vo += g.attributes.position.count;
+    io += src.length;
+    g.dispose();
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.setIndex(new THREE.BufferAttribute(idx, 1));
+  return out;
+}
+
+function buildSwordPixels(px) {
+  const g = new THREE.Group();
+  const byColor = {};
+  SWORD_PIXELS.forEach((row, r) => {
+    [...row].forEach((ch, c) => {
+      if (ch === '.') return;
+      const b = new THREE.BoxGeometry(px, px, px * 1.2);
+      b.translate((c - 7.5) * px, (7.5 - r) * px, 0);
+      (byColor[ch] ||= []).push(b);
+    });
+  });
+  for (const [ch, list] of Object.entries(byColor)) g.add(new THREE.Mesh(mergeBoxes(list), lam(SWORD_COLORS[ch])));
+  return g;
+}
+
+// Zeka küpü yüzleri: 3x3 renkli çıkartma, siyah aralar (karışık dizilim)
+const RUBIK_COLORS = ['#ffffff', '#ffd500', '#c41e3a', '#ff5800', '#0051ba', '#009e60'];
+let rubikMats = null;
+export function rubikMaterials() {
+  if (rubikMats) return rubikMats;
+  rubikMats = [];
+  for (let f = 0; f < 6; f++) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 96;
+    const x = c.getContext('2d');
+    x.fillStyle = '#111'; x.fillRect(0, 0, 96, 96);
+    for (let i = 0; i < 9; i++) {
+      // Merkez kendi rengi, diğerleri karışık
+      const col = i === 4 ? RUBIK_COLORS[f] : RUBIK_COLORS[(f * 7 + i * 5 + (i * i) % 4) % 6];
+      x.fillStyle = col;
+      const r = Math.floor(i / 3), k = i % 3;
+      x.beginPath();
+      x.roundRect ? x.roundRect(4 + k * 31, 4 + r * 31, 27, 27, 5) : x.rect(4 + k * 31, 4 + r * 31, 27, 27);
+      x.fill();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    rubikMats.push(new THREE.MeshLambertMaterial({ map: t }));
+  }
+  return rubikMats;
+}
 
 export function buildWeaponModel(id) {
   const g = new THREE.Group();
@@ -299,6 +406,46 @@ export function buildWeaponModel(id) {
       add(g, box(0.07, 0.03, 0.3), G, 0, -0.03, -0.24);
       glows.push(add(g, new THREE.SphereGeometry(0.035, 10, 8), glow(0xf4ffb0), 0, 0.02, -0.42));
       muzzle.position.set(0, 0.02, -0.45);
+      break;
+    }
+    case 'sword': {
+      // Kılıç: piksel resmin köşegeni ileri-yukarı bakacak şekilde
+      const sw = buildSwordPixels(0.032);
+      const holder = new THREE.Group();
+      holder.add(sw);
+      sw.rotation.z = -Math.PI / 4; // köşegen dikey olsun (uç yukarı)
+      holder.rotation.x = -1.0; // uç ileri eğilsin
+      holder.position.set(0, 0.05, -0.12);
+      g.add(holder);
+      muzzle.position.set(0, 0.25, -0.45);
+      break;
+    }
+    case 'rubik': {
+      add(g, new THREE.BoxGeometry(0.16, 0.16, 0.16), rubikMaterials(), 0, 0.02, -0.15, 0.4, 0.5, 0.1);
+      add(g, box(0.07, 0.07, 0.12), lam(0xe0b48a), 0.05, -0.06, -0.06, 0.3);
+      muzzle.position.set(0, 0.02, -0.25);
+      break;
+    }
+    case 'fractal': {
+      const W = lam(0x1b2b3a);
+      add(g, box(0.09, 0.1, 0.3), W, 0, 0, 0.06);
+      add(g, box(0.05, 0.13, 0.07), BLACK, 0, -0.1, 0.1, 0.25);
+      add(g, cylZ(0.025, 0.04, 0.16, 8), DARK, 0, 0.01, -0.16);
+      // Namlu ucunda küçük dallanan kristal
+      const tip = new THREE.Group();
+      tip.position.set(0, 0.01, -0.26);
+      const seg = (x1, y1, z1, x2, y2, z2) => {
+        const a1 = new THREE.Vector3(x1, y1, z1), a2 = new THREE.Vector3(x2, y2, z2);
+        const m = add(tip, box(0.012, 0.012, a1.distanceTo(a2)), glow(0x7df9ff), (x1 + x2) / 2, (y1 + y2) / 2, (z1 + z2) / 2);
+        m.lookAt(tip.localToWorld(a2.clone()));
+        glows.push(m);
+      };
+      seg(0, 0, 0, 0, 0, -0.08);
+      seg(0, 0, -0.08, 0.04, 0.03, -0.13); seg(0, 0, -0.08, -0.04, 0.03, -0.13);
+      seg(0.04, 0.03, -0.13, 0.07, 0.03, -0.16); seg(0.04, 0.03, -0.13, 0.03, 0.07, -0.16);
+      seg(-0.04, 0.03, -0.13, -0.07, 0.03, -0.16); seg(-0.04, 0.03, -0.13, -0.03, 0.07, -0.16);
+      g.add(tip);
+      muzzle.position.set(0, 0.01, -0.34);
       break;
     }
     case 'teleport': {

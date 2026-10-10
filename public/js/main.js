@@ -277,6 +277,10 @@ $('vreset-btn').addEventListener('click', (e) => {
   e.stopPropagation();
   host && host.receive(0, { t: 'admin', a: 'vreset' });
 });
+$('meteor-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  host && host.receive(0, { t: 'admin', a: 'meteor' });
+});
 
 function refreshAdmin() {
   if (!host) return;

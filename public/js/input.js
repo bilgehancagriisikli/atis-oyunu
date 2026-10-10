@@ -4,6 +4,7 @@ export class Input {
     this.target = target;
     this.keys = new Set();
     this.mouse = [false, false, false];
+    this.clicks = [0, 0, 0]; // kare arasında kaçırılmasın diye basış sayacı
     this.dx = 0;
     this.dy = 0;
     this.wheel = 0;
@@ -32,7 +33,7 @@ export class Input {
       },
       mousedown: (e) => {
         if (!this.active()) return;
-        if (e.button < 3) this.mouse[e.button] = true;
+        if (e.button < 3) { this.mouse[e.button] = true; this.clicks[e.button]++; }
       },
       mouseup: (e) => { if (e.button < 3) this.mouse[e.button] = false; },
       wheel: (e) => {

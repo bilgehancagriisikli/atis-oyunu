@@ -9,8 +9,8 @@ kodu ve kendi isimleriyle doğrudan katılır.
 - **3D harita "Liman Üssü"**: 4 bina (içine girilebilir, çatılara rampa/merdivenle çıkılır),
   binaları birbirine bağlayan köprü, merkezde rampalı platform, konteyner yığınları, sandıklar,
   bariyerler, ağaçlar.
-- **Paraşütle rastgele düşen kutular**: turuncu kutulardan rastgele silah, yeşil kutulardan +50 can,
-  mavi kutulardan **jetpack** çıkar.
+- **Paraşütle rastgele düşen Lego tuğlaları** (2x2, üstü çıkıntılı): turuncu tuğladan rastgele silah,
+  yeşil tuğladan +50 can, mavi tuğladan **jetpack** çıkar.
 - **Jetpack**: havadayken `Boşluk` tuşunu basılı tut, yukarı uçarsın. Yakıt yerde kendiliğinden dolar;
   ölünce jetpack gider.
 - **Binilebilen araçlar** (yanına git, `E` ile bin / in; binince kamera üçüncü şahsa geçer, `V` ile değişir):
@@ -18,14 +18,20 @@ kodu ve kendi isimleriyle doğrudan katılır.
     Atlama rampalarından uçar, çarptığı oyuncuya hasar verir. Sürerken ateş edebilirsin.
   - **2 dev çinçilla** (gri tüylü, kocaman kulaklı): bakış yönünde zıplayarak gider, `Boşluk` ile
     6 m'ye kadar zıplar, yüksekten indiği yerdeki oyuncuları ezer. Kapılardan sığmaz.
-  - Araçtaki oyuncuyu vurmak mümkün; araca isabet daha az hasar verir. Terk edilen araç 90 sn sonra
-    park yerine döner.
-- **14 silah** (herkes tabancayla doğar, diğerleri kutulardan gelir). Silahlar 1–7 tuşlarına gruplanmıştır;
-  aynı tuşa tekrar basınca gruptaki sonraki silaha geçilir:
+  - **2 Türk avurtlağı** (*Mesocricetus brandti*; altın kahve tüylü, siyah göğüslü, beyaz yanaklı):
+    çinçilladan daha hızlı koşar ama daha az zıplar. Hızla çarptığı oyuncuya hasar verir.
+  - Sürerken bir yere çarpınca durmazsın, **sekersin** (yandan çarpınca yön değiştirir, kafa kafaya
+    çarpınca geri seker).
+  - **Araçların ve hayvanların canı var** (sürerken sol altta görünür). İsabet binicinin değil aracın
+    canından düşer. Canı biten araç parçalanır, binici savrulur ve hasar alır; araç 20 sn sonra park
+    yerinde yeniden çıkar. Terk edilen araç 90 sn sonra park yerine döner.
+- **17 silah** (herkes tabanca ve elmas kılıçla doğar, diğerleri tuğlalardan gelir). Silahlar 1–9 tuşlarına
+  gruplanmıştır; aynı tuşa tekrar basınca gruptaki sonraki silaha geçilir:
 
   | Tuş | Silah | Özelliği |
   |---|---|---|
   | 1 | Tabanca | Sınırsız mermi, kafa vuruşu ×2 |
+  | 1 | **Elmas Kılıç** | Minecraft tarzı yakın dövüş kılıcı; önündeki 3 hedefe kadar vurur. Hep elinde |
   | 2 | Pompalı Tüfek | 10 saçma, yakında öldürücü |
   | 2 | Minigun | Önce ısınır, sonra mermi yağdırır (taşırken yavaşlarsın) |
   | 3 | **Bazuka** | Patlayan roket, alan hasarı, savurma (roket zıplaması yapılabilir) |
@@ -39,12 +45,22 @@ kodu ve kendi isimleriyle doğrudan katılır.
   | 6 | **Kara Delik Topu** | Çarptığı yerde herkesi içine çeken kara delik açar |
   | 6 | **Beyaz Delik Topu** | Kara deliğin tersi: herkesi dışarı fırlatır, sonunda patlar |
   | 7 | **Işınlanma Silahı** | Nişangahın gösterdiği yere ışınlar (yerde mavi hedef halkası görünür). Birinin üstüne ışınlanırsan onu ezersin |
+  | 8 | **Zeka Küpü Bombası** | 3x3x3 zeka küpü şeklinde el bombası. Sol tıkla atılır, seker ve yerde bekler; **sağ tıkla** atılmış tüm küpler patlar |
+  | 9 | **Fraktal Silahı** | Tek çizgi ateşler; çizgi ilerledikçe ikiye, dörde, sekize... dallanır (fraktal ağaç). Duvara çarpan dal biter, her değen dal hasar verir |
+
+- **Clypeaster fosilleri**: haritanın bazı yerlerinde yerde duran deniz kestanesi fosilleri trambolin gibi
+  zıplatır (yaya da araçla da). Yüksekten düşersen daha yükseğe sekersin.
+- **Gökten düşen cisimler**: arada bir, rastgele bir yere 5 Platon cismi, 13 Arşimet cismi (+2 ayna
+  ikizi: sol/sağ kalkık küp ve kalkık onikiyüzlü) ve 4 Kepler-Poinsot cisminden biri düşer. Önce yerde
+  kırmızı uyarı halkası çıkar, cismin adı üstünde yazar; çarpınca patlar, halkanın içindekilere ve
+  araçlara hasar verir.
 
 - **Mini harita** (sol üstte, dönen) ve **büyük harita** (`M`): kutular, araçlar, kara/beyaz delikler ve
-  ateş eden düşmanlar görünür.
+  ateş eden düşmanlar ve gökten cisim düşecek yerler görünür.
 - Skor tablosu, öldürme akışı, sohbet, vuruş işaretleri, hasar yönü göstergesi, doğma koruması.
 - Kodla üretilen sesler ve dokular: dışarıdan resim/ses dosyası yok.
-- **Admin paneli** (Esc menüsünde): oyuncu atma, skorları sıfırlama, kutu yağdırma, araçları park yerine gönderme.
+- **Admin paneli** (Esc menüsünde): oyuncu atma, skorları sıfırlama, kutu yağdırma, araçları park yerine gönderme,
+  gökten cisim düşürme.
 
 ## Erişim kodları
 
@@ -99,10 +115,11 @@ npx wrangler deploy        # wrangler.jsonc, public/ klasörünü yayınlar
 |---|---|
 | `W A S D` / ok tuşları | Hareket |
 | Fare | Nişan |
-| Sol tık | Ateş (basılı tut) |
+| Sol tık | Ateş (basılı tut), kılıç savur, zeka küpü at |
+| Sağ tık | Atılmış zeka küplerini patlat |
 | `Boşluk` | Zıpla |
 | `Shift` | Koş (motosiklette nitro) |
-| `1`–`7`, tekerlek | Silah seç (aynı tuş: gruptaki sonraki silah) |
+| `1`–`9`, tekerlek | Silah seç (aynı tuş: gruptaki sonraki silah) |
 | `Q` | Önceki silah |
 | `E` | Araca bin / in |
 | `V` | Birinci / üçüncü şahıs kamera |
@@ -154,11 +171,12 @@ public/
   js/net.js           PeerJS bağlantıları
   js/host.js          admin (sunucu) oyun mantığı
   js/game.js          oyun döngüsü, oyuncu, silahlar, araç sürüşü, jetpack
-  js/vehicles.js      motosiklet ve dev çinçilla: modeller ve sürüş fiziği
+  js/vehicles.js      motosiklet, dev çinçilla, Türk avurtlağı: modeller ve sürüş fiziği
+  js/polyhedra.js     Platon, Arşimet ve Kepler-Poinsot cisimlerinin geometrisi
   js/map.js           harita ve mini harita
   js/physics.js       çarpışma, hareket, ışın testleri
   js/weapons.js       silah tanımları ve modelleri
-  js/effects.js       patlama, lazer, şimşek, kara delik efektleri
+  js/effects.js       patlama, lazer, şimşek, kara delik, fraktal efektleri
   js/avatar.js        diğer oyuncuların karakter modeli
   js/hud.js           ekran arayüzü
   js/audio.js         kodla üretilen sesler

@@ -1,6 +1,7 @@
 // Görsel efektler: parçacıklar, izler, ışınlar, patlamalar, kara delik.
 import * as THREE from 'three';
 import { glowTexture } from './textures.js';
+import { rubikMaterials } from './weapons.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _spriteTmp = new THREE.Vector3();
@@ -172,7 +173,8 @@ export class Effects {
     this.glowTex = glowTexture();
     this.add = new Particles(scene, quality === 'low' ? 1500 : 4000, true);
     this.smoke = new Particles(scene, quality === 'low' ? 600 : 1500, false);
-    this.segs = new SegmentPool(scene, 160);
+    this.segs = new SegmentPool(scene, 400);
+    this.delayed = [];
     this.sprites = [];
     for (let i = 0; i < 40; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -433,20 +435,26 @@ export class Effects {
       g.add(core);
     } else if (kind === 'worb') {
       g.add(new THREE.Mesh(new THREE.SphereGeometry(0.28, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffffff })));
+    } else if (kind === 'rubik') {
+      // 3x3x3 zeka küpü; kendi içinde yuvarlanır
+      spinner = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), rubikMaterials());
+      spinner.castShadow = true;
+      g.add(spinner);
     } else {
       g.add(new THREE.Mesh(new THREE.SphereGeometry(0.28, 14, 10), new THREE.MeshBasicMaterial({ color: 0x080210 })));
     }
-    const glowColor = { rocket: 0xffaa44, grenade: 0x9cff4a, saw: 0xfff0c0, zig: 0xd4ff3a, worb: 0xffd76a }[kind] ?? 0xb040ff;
+    const glowColor = { rocket: 0xffaa44, grenade: 0x9cff4a, saw: 0xfff0c0, zig: 0xd4ff3a, worb: 0xffd76a, rubik: 0xff4040 }[kind] ?? 0xb040ff;
     glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
       map: this.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: glowColor,
     }));
-    glowSprite.scale.setScalar(kind === 'orb' || kind === 'worb' ? 1.6 : kind === 'zig' ? 1.1 : kind === 'saw' ? 0.6 : 0.5);
+    glowSprite.scale.setScalar(kind === 'orb' || kind === 'worb' ? 1.6 : kind === 'zig' ? 1.1 : kind === 'saw' ? 0.6 : kind === 'rubik' ? 0.35 : 0.5);
     if (kind === 'rocket') glowSprite.position.z = 0.3;
     g.add(glowSprite);
     this.scene.add(g);
     const fx = this;
     return {
       obj: g,
+      spinner,
       trail(dt, t) {
         const p = g.position;
         if (kind === 'rocket') {
@@ -468,6 +476,9 @@ export class Effects {
             const v = randDir(tmpV).multiplyScalar(1.5);
             fx.add.spawn(p.x, p.y, p.z, v.x, v.y, v.z, 0.3, 0.1, 0.02, fx.color(0xffffff), 1);
           }
+        } else if (kind === 'rubik') {
+          // Duran küp yanıp söner (patlatılmayı bekliyor)
+          glowSprite.material.opacity = 0.5 + Math.sin(t * 8) * 0.5;
         } else if (kind === 'worb') {
           glowSprite.scale.setScalar(1.4 + Math.sin(t * 15) * 0.3);
           for (let i = 0; i < 2; i++) {
@@ -484,7 +495,8 @@ export class Effects {
       },
       dispose() {
         fx.scene.remove(g);
-        g.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+        // Zeka küpünün malzemeleri paylaşımlı (dizi): bırakılmaz
+        g.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && !Array.isArray(o.material)) o.material.dispose(); });
       },
     };
   }
@@ -531,6 +543,54 @@ export class Effects {
       this.flash(_spriteTmp, color, 30, 10, 0.3);
     }
     this.segs.add(from.clone().setY(from.y + 1), to.clone().setY(to.y + 1), color, 0.04, 0.25, 0.6);
+  }
+
+  // Fraktal: kuşaklar sırayla belirir (dallanarak ilerler). segs: [{a, b, gen}]
+  fractal(segs, color, depth) {
+    const c0 = new THREE.Color(color), c1 = new THREE.Color(0xff6bf2);
+    for (const sg of segs) {
+      const k = sg.gen / Math.max(1, depth);
+      const col = c0.clone().lerp(c1, k).getHex();
+      const w = 0.16 * Math.pow(0.8, sg.gen);
+      const a = sg.a.clone(), b = sg.b.clone();
+      this.later(sg.gen * 0.045, () => {
+        this.segs.add(a, b, 0xffffff, w * 0.4, 0.45, 1);
+        this.segs.add(a, b, col, w, 0.75, 0.8);
+        if (sg.tip) this.sprite(b, col, 0.7, 0.1, 0.3);
+      });
+    }
+  }
+
+  later(delay, fn) { this.delayed.push({ t: delay, fn }); }
+
+  // Trambolin (clypeaster) zıplaması
+  boing(pos) {
+    const c = this.color(0xfff1c4).clone();
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      this.add.spawn(pos.x + Math.cos(a) * 0.9, pos.y + 0.3, pos.z + Math.sin(a) * 0.9, Math.cos(a) * 2, 3 + Math.random() * 2, Math.sin(a) * 2, 0.5, 0.15, 0.02, c, 1, 6, 1);
+    }
+    this.sprite(_spriteTmp.set(pos.x, pos.y + 0.4, pos.z), 0xfff1c4, 0.5, 3, 0.25, 0.6);
+  }
+
+  // Gökten düşen cismin ateş izi
+  meteorTrail(pos, color) {
+    const c = this.color(color).clone();
+    for (let i = 0; i < 3; i++) {
+      const v = randDir(tmpV).multiplyScalar(1.2);
+      this.add.spawn(pos.x + v.x, pos.y + v.y, pos.z + v.z, v.x, 6 + Math.random() * 4, v.z, 0.5, 1.0, 0.2, c, 1, 0, 1);
+    }
+    this.smoke.spawn(pos.x, pos.y + 1, pos.z, (Math.random() - 0.5) * 2, 4, (Math.random() - 0.5) * 2, 1.4, 1.2, 3, this.color(0x555555), 0.45, -0.2, 0.8);
+  }
+
+  // Araç parçalandı
+  vehicleBoom(pos) {
+    this.explosion(pos, 5, 0xff7a2a);
+    const grey = this.color(0x333333).clone();
+    for (let i = 0; i < 30; i++) {
+      this.smoke.spawn(pos.x + (Math.random() - 0.5), pos.y + 0.5, pos.z + (Math.random() - 0.5), (Math.random() - 0.5) * 2, 3 + Math.random() * 3, (Math.random() - 0.5) * 2,
+        2.5, 1.0, 3.5, grey, 0.6, -0.4, 0.6);
+    }
   }
 
   // Jetpack alevi (aşağı doğru)
@@ -587,6 +647,11 @@ export class Effects {
   }
 
   update(dt, camera, renderer) {
+    for (let i = this.delayed.length - 1; i >= 0; i--) {
+      const d = this.delayed[i];
+      d.t -= dt;
+      if (d.t <= 0) { this.delayed.splice(i, 1); d.fn(); }
+    }
     const h = renderer.domElement.height;
     const scale = h * 0.5 / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
     this.add.mat.uniforms.scale.value = scale;

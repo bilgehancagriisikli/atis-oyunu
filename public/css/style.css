@@ -230,6 +230,11 @@ kbd {
 #hp-fill { height: 100%; width: 100%; background: var(--ok); transition: width 0.15s; }
 #hp-text { min-width: 36px; text-align: right; font-size: 22px; }
 
+#vhp { display: flex; align-items: center; gap: 8px; background: rgba(0, 0, 0, 0.45); padding: 5px 12px; border-radius: 10px; margin-bottom: 6px; }
+#vhp .bar { flex: 1; height: 10px; background: rgba(255, 255, 255, 0.15); border-radius: 5px; overflow: hidden; }
+#vhp-fill { height: 100%; width: 100%; background: #ffb347; transition: width 0.15s; }
+#vhp-text { min-width: 32px; text-align: right; font-size: 13px; }
+#vhp-icon { font-size: 15px; }
 #jet { display: flex; align-items: center; gap: 8px; background: rgba(0, 0, 0, 0.45); padding: 5px 12px; border-radius: 10px; margin-bottom: 6px; }
 #jet .bar { flex: 1; height: 8px; background: rgba(255, 255, 255, 0.15); border-radius: 4px; overflow: hidden; }
 #jet-fill { height: 100%; width: 100%; background: #3fa9ff; }

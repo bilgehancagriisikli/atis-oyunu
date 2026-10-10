@@ -460,8 +460,32 @@ export function buildMap(scene, quality = 'high') {
     ['moto', -50, -44, Math.PI / 2], ['moto', 50, -44, -Math.PI / 2],
     ['moto', -50, 44, Math.PI / 2], ['moto', 50, 44, -Math.PI / 2],
     ['chin', 0, -45, Math.PI], ['chin', -20, 50, 0],
+    ['ham', -40, -12, 0], ['ham', 40, 14, Math.PI],
   ]) {
     vehicleSpawns.push({ kind, x, y: world.groundAt(x, z, 1), z, yaw });
+  }
+
+  // ---------------- Clypeaster fosilleri (trambolin) ----------------
+  // Kubbe: halka geometrisinin içi yukarı itilir, düzlemsel UV üstten görünüşü korur
+  const trampolines = [];
+  const fossilMat = new THREE.MeshLambertMaterial({ map: tex.fossil });
+  for (const [x, z] of [[28, 8], [-28, -8], [-10, 29], [46, 30], [-46, -30], [4, -4], [-20, -50]]) {
+    const y = world.groundAt(x, z, 10);
+    const R = 1.35;
+    const g = new THREE.RingGeometry(0.001, R, 40, 10);
+    g.rotateX(-Math.PI / 2);
+    const pa = g.attributes.position;
+    for (let i = 0; i < pa.count; i++) {
+      const rr = Math.hypot(pa.getX(i), pa.getZ(i)) / R;
+      pa.setY(i, 0.42 * Math.pow(Math.max(0, 1 - rr * rr), 0.6));
+    }
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, fossilMat);
+    m.position.set(x, y + 0.01, z);
+    m.receiveShadow = quality !== 'low';
+    m.castShadow = quality !== 'low';
+    scene.add(m);
+    trampolines.push({ x, y, z, r: R });
   }
 
   return {
@@ -470,6 +494,7 @@ export function buildMap(scene, quality = 'high') {
     meshes,
     spawns,
     vehicleSpawns,
+    trampolines,
     minimap: drawMinimap(world),
     update(t) {
       beacon.material.color.setHSL(0.5 + Math.sin(t * 2) * 0.05, 1, 0.55 + Math.sin(t * 4) * 0.15);

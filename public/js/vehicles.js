@@ -1,24 +1,35 @@
-// Binilebilen araçlar: motosiklet ve dev çinçilla. Tanımlar, sürüş fiziği ve 3D modeller.
+// Binilebilen araçlar: motosiklet, dev çinçilla ve Türk avurtlağı. Tanımlar, sürüş fiziği ve 3D modeller.
 import * as THREE from 'three';
 import { stepCharacter, moveBody } from './physics.js';
 
 // seatOff: binicinin "ayak" noktası (vuruş kutusu, ağ konumu) aracın tabanından bu kadar yukarıda.
 // Binici oturur: kalçası (ayaktan 0.82 m yukarıda) eyerin üstündedir.
+// body.bounce: engele çarpınca durmak yerine seker. hp: aracın canı. barY: can çubuğunun yüksekliği.
 export const VEH = {
   moto: {
-    name: 'Motosiklet', bin: 'Motosiklete bin', seatOff: 0.06, reach: 3, tpDist: 5, tpUp: 0.7,
-    body: { radius: 0.6, height: 2.2, step: 0.6, airStep: 0.3, gravity: 24, snap: 0.65, launch: true },
+    name: 'Motosiklet', bin: 'Motosiklete bin', seatOff: 0.06, reach: 3, tpDist: 5, tpUp: 0.7, hp: 150, barY: 1.7,
+    body: { radius: 0.6, height: 2.2, step: 0.6, airStep: 0.3, gravity: 24, snap: 0.65, launch: true, bounce: 0.6 },
     accel: 15, brake: 30, max: 24, boost: 33, rev: 7, turn: 2.3, hop: 6.5,
     hit: { hw: 0.65, y0: 0, y1: 1.15 },
   },
   chin: {
-    name: 'Dev Çinçilla', bin: 'Çinçillaya bin', seatOff: 1.58, reach: 4.2, tpDist: 8.5, tpUp: 1.6,
+    name: 'Dev Çinçilla', bin: 'Çinçillaya bin', seatOff: 1.58, reach: 4.2, tpDist: 8.5, tpUp: 1.6, hp: 320, barY: 3.4,
     body: {
       radius: 1.05, height: 3.7, step: 0.9, airStep: 0.45, gravity: 24, snap: 0.8,
-      jump: 17, groundAccel: 45, airAccel: 14,
+      jump: 17, groundAccel: 45, airAccel: 14, bounce: 0.55,
     },
-    speed: 11, sprint: 15,
+    speed: 11, sprint: 15, hop: 0.35, gait: [5, 0.55], stride: 0.6,
     hit: { hw: 1.25, y0: 0.15, y1: 2.6 },
+  },
+  // Türk avurtlağı (Mesocricetus brandti): çinçilladan hızlı koşar, daha az zıplar
+  ham: {
+    name: 'Türk Avurtlağı', bin: 'Avurtlağa bin', seatOff: 0.93, reach: 3.6, tpDist: 7, tpUp: 1.2, hp: 240, barY: 2.6,
+    body: {
+      radius: 0.85, height: 3.0, step: 0.8, airStep: 0.4, gravity: 24, snap: 0.8,
+      jump: 11, groundAccel: 60, airAccel: 14, bounce: 0.55,
+    },
+    speed: 16, sprint: 21, hop: 0.1, gait: [9, 0.8], stride: 0.9,
+    hit: { hw: 1.0, y0: 0.1, y1: 1.9 },
   },
 };
 
@@ -50,21 +61,28 @@ export function stepMoto(world, v, inp, dt) {
   } else {
     v.yaw -= inp.steer * D.turn * 0.45 * dt;
   }
-  const before = vs;
   moveBody(world, v, dt, D.body);
   fx = -Math.sin(v.yaw); fz = -Math.cos(v.yaw);
-  const after = v.vx * fx + v.vz * fz;
-  v.speed = after;
-  // Duvara sert çarpma: hız aniden düştüyse
-  v.crash = Math.abs(before) - Math.abs(after) > 9 ? Math.abs(before) - Math.abs(after) : 0;
+  // Engele çarptı: durmaz, seker. Sıyırarak çarpınca burun yeni yöne döner;
+  // kafa kafaya çarpınca burun aynı kalır, motor geri seker.
+  const impact = v.bounced || 0;
+  if (impact > 2) {
+    const hs = Math.hypot(v.vx, v.vz);
+    if (hs > 1.5 && (v.vx * fx + v.vz * fz) / hs > 0.05) {
+      v.yaw = Math.atan2(-v.vx, -v.vz);
+      fx = -Math.sin(v.yaw); fz = -Math.cos(v.yaw);
+    }
+  }
+  v.speed = v.vx * fx + v.vz * fz;
+  v.crash = impact > 7 ? impact : 0;
   const targetLean = -inp.steer * Math.min(1, Math.abs(vs) / 10) * 0.45 * (v.onGround ? 1 : 0.4);
   v.lean += (targetLean - v.lean) * Math.min(1, dt * 8);
   v.steer = inp.steer;
 }
 
-// inp: {wx, wz (dünya yönü), sprint, jump}
-export function stepChin(world, v, inp, dt) {
-  const D = VEH.chin;
+// Binilen hayvanlar (çinçilla, avurtlak). inp: {wx, wz (dünya yönü), sprint, jump}
+export function stepAnimal(world, v, inp, dt, kind) {
+  const D = VEH[kind];
   const wasGround = v.onGround;
   const fallV = v.vy;
   stepCharacter(world, v, { x: inp.wx, z: inp.wz, speed: inp.sprint ? D.sprint : D.speed, jump: inp.jump && v.onGround }, dt, D.body);
@@ -73,6 +91,7 @@ export function stepChin(world, v, inp, dt) {
   v.speed = hs;
   if (!wasGround && v.onGround) v.landed = Math.min(v.landed || 0, fallV);
   if (wasGround && !v.onGround && v.vy > 5) v.hopped = true;
+  v.crash = (v.bounced || 0) > 7 ? v.bounced : 0;
 }
 
 // ------------------------------------------------------------
@@ -207,16 +226,118 @@ function buildChin() {
   return { root, body, head, ears, paws, legs, tail };
 }
 
+// Türk avurtlağı: altın-kahve sırt, siyah göğüs, beyaz kocaman avurtlar, küçük yuvarlak kulaklar
+function buildHam() {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  const fur = lam(0xb07a45), furDark = lam(0x8a5a30), black = lam(0x1e1a17), cream = lam(0xf3ede3);
+  const pink = lam(0xf0a8b4), eye = basic(0x0b0b0b), white = basic(0xffffff);
+  const sph = (r, w = 14, h = 10) => new THREE.SphereGeometry(r, w, h);
+  const torso = mesh(body, sph(0.85, 22, 16), fur, 0, 0.95, 0.1);
+  torso.scale.set(1.0, 0.85, 1.3);
+  const chest = mesh(body, sph(0.7, 16, 12), black, 0, 0.82, -0.62);
+  chest.scale.set(0.82, 0.62, 0.5);
+  const belly = mesh(body, sph(0.7, 16, 12), lam(0xd9cfc0), 0, 0.62, 0.2);
+  belly.scale.set(0.85, 0.5, 1.0);
+  const head = new THREE.Group();
+  head.position.set(0, 1.42, -0.95);
+  body.add(head);
+  const skull = mesh(head, sph(0.55, 18, 14), fur, 0, 0, 0);
+  skull.scale.set(1, 0.92, 1.05);
+  // Avurtlar (yanak keseleri)
+  for (const sx of [-1, 1]) {
+    const cheek = mesh(head, sph(0.36, 14, 10), cream, sx * 0.42, -0.14, -0.12);
+    cheek.scale.set(0.9, 0.85, 1.1);
+    const stripe = mesh(head, sph(0.14, 10, 8), black, sx * 0.47, 0.02, -0.28);
+    stripe.scale.set(0.4, 0.5, 1.4);
+    mesh(head, sph(0.085, 8, 6), eye, sx * 0.24, 0.16, -0.43);
+    mesh(head, sph(0.03, 6, 5), white, sx * 0.26, 0.2, -0.5);
+  }
+  const snout = mesh(head, sph(0.24), cream, 0, -0.12, -0.48);
+  snout.scale.set(1.1, 0.85, 0.9);
+  mesh(head, sph(0.06, 8, 6), pink, 0, -0.05, -0.7);
+  const wp = [];
+  for (const sx of [-1, 1]) {
+    for (let i = 0; i < 3; i++) wp.push(new THREE.Vector3(sx * 0.15, -0.12 + i * 0.04, -0.62), new THREE.Vector3(sx * 0.7, -0.22 + i * 0.12, -0.5));
+  }
+  head.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(wp), new THREE.LineBasicMaterial({ color: 0x222222 })));
+  const ears = [];
+  for (const sx of [-1, 1]) {
+    const e = new THREE.Group();
+    e.position.set(sx * 0.32, 0.42, 0.12);
+    const outer = mesh(e, sph(0.18, 10, 8), furDark, 0, 0.1, 0);
+    outer.scale.set(1, 1, 0.35);
+    const inner = mesh(e, sph(0.13, 10, 8), pink, 0, 0.1, -0.04);
+    inner.scale.set(0.9, 0.9, 0.2);
+    head.add(e);
+    ears.push(e);
+  }
+  const paws = [];
+  for (const sx of [-1, 1]) {
+    const p = mesh(body, sph(0.16, 10, 8), pink, sx * 0.34, 0.15, -0.8);
+    p.scale.set(1, 0.7, 1.3);
+    paws.push(p);
+  }
+  const legs = [];
+  for (const sx of [-1, 1]) {
+    const l = new THREE.Group();
+    l.position.set(sx * 0.5, 0.5, 0.55);
+    const thigh = mesh(l, sph(0.36, 12, 10), fur, 0, 0, 0);
+    thigh.scale.set(0.8, 1, 1.05);
+    const foot = mesh(l, sph(0.17, 10, 8), pink, 0, -0.38, -0.12);
+    foot.scale.set(1, 0.6, 1.8);
+    body.add(l);
+    legs.push(l);
+  }
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.85, 1.12);
+  body.add(tail);
+  mesh(tail, sph(0.13, 8, 6), furDark, 0, 0, 0);
+  // Eyer
+  mesh(body, new THREE.CylinderGeometry(0.55, 0.55, 0.1, 18), lam(0x2e7d32), 0, 1.66, 0.12);
+  mesh(body, new THREE.BoxGeometry(0.72, 0.16, 0.8), lam(0x7a4a22), 0, 1.74, 0.12);
+  mesh(body, new THREE.BoxGeometry(0.45, 0.18, 0.1), lam(0x5a3416), 0, 1.88, -0.2);
+  return { root, body, head, ears, paws, legs, tail };
+}
+
+// Can çubuğu (araç hasar görünce üstünde belirir)
+function barTexture(frac) {
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 16;
+  const x = c.getContext('2d');
+  x.fillStyle = 'rgba(0,0,0,0.65)'; x.fillRect(0, 0, 128, 16);
+  x.fillStyle = frac > 0.5 ? '#3ee070' : frac > 0.25 ? '#f0c030' : '#ff4040';
+  x.fillRect(2, 2, 124 * Math.max(0, frac), 12);
+  return new THREE.CanvasTexture(c);
+}
+
 // Aracın sahnedeki görünümü
 export class VehicleView {
   constructor(scene, kind, color) {
     this.scene = scene;
     this.kind = kind;
-    this.m = kind === 'moto' ? buildMoto(color) : buildChin();
+    this.m = kind === 'moto' ? buildMoto(color) : kind === 'ham' ? buildHam() : buildChin();
     this.root = this.m.root;
     this.phase = 0;
     this.squash = 0;
+    this.bar = new THREE.Sprite(new THREE.SpriteMaterial({ map: barTexture(1), depthWrite: false }));
+    this.bar.scale.set(1.4, 0.18, 1);
+    this.bar.position.y = VEH[kind].barY;
+    this.bar.visible = false;
+    this.bar.renderOrder = 6;
+    this.root.add(this.bar);
     scene.add(this.root);
+  }
+
+  setHp(hp, max) {
+    const frac = Math.round((hp / max) * 40) / 40;
+    this.bar.visible = hp < max && hp > 0;
+    if (frac === this.barFrac) return;
+    this.barFrac = frac;
+    const old = this.bar.material.map;
+    this.bar.material.map = barTexture(frac);
+    old.dispose();
   }
 
   setPose(x, y, z, yaw) {
@@ -235,18 +356,23 @@ export class VehicleView {
       if (!s.ridden) m.lean.rotation.z = 0.18;
       return;
     }
+    // Hayvan yürüyüşü: çinçilla sıçrar, avurtlak hızlı hızlı koşturur
+    const D = VEH[this.kind];
     const sp = Math.abs(s.speed);
     const moving = s.onGround && sp > 0.8;
-    if (moving) this.phase += dt * (5 + sp * 0.55);
+    if (moving) this.phase += dt * (D.gait[0] + sp * D.gait[1]);
     const hop = moving ? Math.abs(Math.sin(this.phase)) : 0;
     this.squash = Math.max(0, this.squash - dt * 4);
     const air = !s.onGround;
-    m.body.position.y = hop * 0.35;
+    m.body.position.y = hop * D.hop;
     const breathe = 1 + Math.sin(t * 2.2) * 0.015;
     m.body.scale.set(breathe + this.squash * 0.15, (air ? 1.05 : 1) * breathe - this.squash * 0.18, air ? 1.06 : 1);
     for (let i = 0; i < 2; i++) {
-      m.legs[i].rotation.x = air ? 0.7 : moving ? Math.sin(this.phase) * 0.6 : 0;
-      m.paws[i].position.z = -1.15 + (moving ? Math.cos(this.phase) * 0.15 : 0);
+      // Avurtlak bacakları sırayla, çinçillanınki birlikte
+      const ph = this.kind === 'ham' ? this.phase + i * Math.PI : this.phase;
+      m.legs[i].rotation.x = air ? 0.7 : moving ? Math.sin(ph) * D.stride : 0;
+      if (m.pawZ === undefined) m.pawZ = m.paws[0].position.z;
+      m.paws[i].position.z = m.pawZ + (moving ? Math.cos(ph) * 0.15 : 0);
       m.ears[i].rotation.x = air ? 0.55 : moving ? Math.sin(this.phase * 2) * 0.15 : Math.sin(t * 1.3 + i) * 0.05;
     }
     m.head.rotation.x = air ? -0.15 : 0;

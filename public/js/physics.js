@@ -209,8 +209,9 @@ export function stepCharacter(world, p, wish, dt, o = PLAYER) {
 export function moveBody(world, p, dt, o) {
   const r = o.radius, H = o.height;
   const step = p.onGround ? o.step : o.airStep;
-  moveAxis(world, p, 0, p.vx * dt, r, step, H);
-  moveAxis(world, p, 1, p.vz * dt, r, step, H);
+  p.bounced = 0;
+  moveAxis(world, p, 0, p.vx * dt, r, step, H, o.bounce || 0);
+  moveAxis(world, p, 1, p.vz * dt, r, step, H, o.bounce || 0);
 
   // Dikey
   p.vy -= o.gravity * dt;
@@ -260,11 +261,13 @@ export function moveBody(world, p, dt, o) {
   }
 }
 
-function moveAxis(world, p, axis, delta, r, step, H) {
+// bounce > 0: engele çarpınca o eksendeki hız tersine döner (araçlar seker, durmaz)
+function moveAxis(world, p, axis, delta, r, step, H, bounce) {
   if (delta === 0) return;
   const feet = p.y, head = p.y + H;
   let nx = axis === 0 ? p.x + delta : p.x;
   let nz = axis === 1 ? p.z + delta : p.z;
+  let blocked = false;
   for (const c of world.colliders) {
     if (nx + r <= c.minX || nx - r >= c.maxX || nz + r <= c.minZ || nz - r >= c.maxZ) continue;
     if (c.minY >= head - 0.01) continue;
@@ -276,7 +279,13 @@ function moveAxis(world, p, axis, delta, r, step, H) {
     } else {
       nx = p.x; nz = p.z;
     }
-    if (axis === 0) p.vx = 0; else p.vz = 0;
+    blocked = true;
+  }
+  if (blocked) {
+    const v = axis === 0 ? p.vx : p.vz;
+    p.bounced = Math.max(p.bounced || 0, Math.abs(v));
+    const nv = bounce > 0 && Math.abs(v) > 1 ? -v * bounce : 0;
+    if (axis === 0) p.vx = nv; else p.vz = nv;
   }
   // Kenetlenme sonucu geri gitme sapmalarını sınırla
   if (axis === 0) {

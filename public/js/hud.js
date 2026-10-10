@@ -18,6 +18,7 @@ export class Hud {
       chatLog: $('chat-log'), chatBox: $('chat-input-wrap'), chatInput: $('chat-input'),
       info: $('net-info'), prot: $('prot'), dmgDir: $('dmg-dir'), crosshair: $('crosshair'),
       jet: $('jet'), jetFill: $('jet-fill'), prompt: $('prompt'),
+      vhp: $('vhp'), vhpFill: $('vhp-fill'), vhpText: $('vhp-text'), vhpIcon: $('vhp-icon'),
     };
     this.miniCtx = this.el.mini.getContext('2d');
     this.bigCtx = this.el.bigCanvas.getContext('2d');
@@ -116,6 +117,20 @@ export class Hud {
     }
   }
 
+  // Bindiğimiz aracın canı (kind null: araçta değiliz)
+  setVehicleHp(kind, hp, max) {
+    const key = kind ? kind + ':' + Math.ceil(hp) : '';
+    if (key === this.vhpKey) return;
+    this.vhpKey = key;
+    this.el.vhp.classList.toggle('hidden', !kind);
+    if (!kind) return;
+    const f = Math.max(0, Math.min(1, hp / max));
+    this.el.vhpIcon.textContent = kind === 'moto' ? '🏍️' : kind === 'chin' ? '🐭' : '🐹';
+    this.el.vhpFill.style.width = f * 100 + '%';
+    this.el.vhpFill.style.background = f > 0.5 ? '#ffb347' : f > 0.25 ? '#f07a30' : '#ff4040';
+    this.el.vhpText.textContent = Math.max(0, Math.ceil(hp));
+  }
+
   setPrompt(text) {
     if (text === this.lastPrompt) return;
     this.lastPrompt = text;
@@ -184,7 +199,7 @@ export class Hud {
 
   // --------------------------------------------------------
   // Mini harita (oyuncu merkezli, dönen)
-  drawMinimap(mapCanvas, me, crates, blips, holes, vehicles = []) {
+  drawMinimap(mapCanvas, me, crates, blips, holes, vehicles = [], meteors = []) {
     const ctx = this.miniCtx;
     const S = this.el.mini.width;
     const zm = 2.2; // piksel / metre
@@ -202,7 +217,7 @@ export class Hud {
     ctx.drawImage(mapCanvas, -(me.x + MINIMAP_RANGE) * zm, -(me.z + MINIMAP_RANGE) * zm,
       mapCanvas.width * zm / k0, mapCanvas.height * zm / k0);
     ctx.globalAlpha = 1;
-    this.drawMarkers(ctx, (x) => (x - me.x) * zm, (z) => (z - me.z) * zm, crates, blips, holes, 1, vehicles);
+    this.drawMarkers(ctx, (x) => (x - me.x) * zm, (z) => (z - me.z) * zm, crates, blips, holes, 1, vehicles, meteors);
     ctx.restore();
     // Oyuncu oku
     ctx.save();
@@ -223,14 +238,27 @@ export class Hud {
     ctx.fillText('K', S / 2 + Math.cos(na) * (S / 2 - 12), S / 2 + Math.sin(na) * (S / 2 - 12));
   }
 
-  drawMarkers(ctx, tx, tz, crates, blips, holes, scale, vehicles = []) {
+  drawMarkers(ctx, tx, tz, crates, blips, holes, scale, vehicles = [], meteors = []) {
+    // Düşecek cisimlerin patlama alanı (yanıp söner)
+    const pulse = 0.45 + 0.35 * Math.sin(performance.now() / 90);
+    for (const m of meteors) {
+      ctx.fillStyle = `rgba(255,60,30,${pulse * 0.45})`;
+      ctx.strokeStyle = `rgba(255,80,40,${pulse + 0.2})`;
+      ctx.lineWidth = 2;
+      const r = Math.max(4 * scale, Math.abs(tx(m.x + m.r) - tx(m.x))); // dünya biriminden piksele
+      ctx.beginPath(); ctx.arc(tx(m.x), tz(m.z), r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
     for (const v of vehicles) {
-      ctx.fillStyle = v.k === 'chin' ? '#d9c7a8' : '#4fd8ff';
+      ctx.fillStyle = v.k === 'chin' ? '#d9c7a8' : v.k === 'ham' ? '#d08a3a' : '#4fd8ff';
       ctx.strokeStyle = '#000';
       ctx.lineWidth = 1;
       ctx.beginPath();
       if (v.k === 'chin') ctx.arc(tx(v.x), tz(v.z), 5 * scale, 0, Math.PI * 2);
-      else {
+      else if (v.k === 'ham') {
+        // Avurtlak: üçgen
+        const x = tx(v.x), z = tz(v.z), r = 5 * scale;
+        ctx.moveTo(x, z - r); ctx.lineTo(x + r, z + r * 0.8); ctx.lineTo(x - r, z + r * 0.8); ctx.closePath();
+      } else {
         // Motosiklet: eşkenar dörtgen
         const x = tx(v.x), z = tz(v.z), r = 5 * scale;
         ctx.moveTo(x, z - r); ctx.lineTo(x + r, z); ctx.lineTo(x, z + r); ctx.lineTo(x - r, z); ctx.closePath();
@@ -258,7 +286,7 @@ export class Hud {
   // Büyük harita (M)
   showBigMap(show) { this.el.big.classList.toggle('hidden', !show); }
 
-  drawBigMap(mapCanvas, me, crates, blips, holes, vehicles = []) {
+  drawBigMap(mapCanvas, me, crates, blips, holes, vehicles = [], meteors = []) {
     const c = this.el.bigCanvas;
     const ctx = this.bigCtx;
     const S = c.width;
@@ -266,7 +294,7 @@ export class Hud {
     ctx.clearRect(0, 0, S, S);
     ctx.drawImage(mapCanvas, 0, 0, S, S);
     const tx = (x) => (x + MINIMAP_RANGE) * k, tz = (z) => (z + MINIMAP_RANGE) * k;
-    this.drawMarkers(ctx, tx, tz, crates, blips, holes, 1.5, vehicles);
+    this.drawMarkers(ctx, tx, tz, crates, blips, holes, 1.5, vehicles, meteors);
     ctx.save();
     ctx.translate(tx(me.x), tz(me.z));
     ctx.rotate(-me.yaw);

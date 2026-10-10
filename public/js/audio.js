@@ -99,7 +99,7 @@ export class Sfx {
   play(name, pos = null, vol = 1) {
     if (!this.ctx || this.ctx.state !== 'running') return;
     const t = this.ctx.currentTime;
-    const maxD = name === 'explosion' || name === 'implode' ? 160 : 100;
+    const maxD = name === 'explosion' || name === 'implode' || name === 'meteor' ? 160 : 100;
     const o = this.out(pos, vol, maxD);
     if (!o) return;
     switch (name) {
@@ -239,6 +239,35 @@ export class Sfx {
         break;
       case 'jetstart':
         this.burst(o, t, 'bandpass', 400, 1200, 0.3, 0.6, 1);
+        break;
+      case 'boing':
+        this.tone(o, t, 'sine', 180, 520, 0.35, 0.7, 0.005);
+        this.tone(o, t + 0.05, 'triangle', 260, 700, 0.3, 0.3, 0.005);
+        break;
+      case 'swoosh':
+        this.burst(o, t, 'bandpass', 600, 2400, 0.18, 0.6, 1.2);
+        break;
+      case 'slash':
+        this.burst(o, t, 'highpass', 3000, 1500, 0.1, 0.6);
+        this.tone(o, t, 'square', 900, 500, 0.06, 0.2);
+        break;
+      case 'throw':
+        this.burst(o, t, 'bandpass', 800, 1600, 0.12, 0.4, 1);
+        break;
+      case 'click':
+        this.tone(o, t, 'square', 1800, 1800, 0.03, 0.3);
+        this.tone(o, t + 0.05, 'square', 1200, 1200, 0.03, 0.3);
+        break;
+      case 'cubehit':
+        this.tone(o, t, 'triangle', 700, 500, 0.05, 0.25);
+        break;
+      case 'fractal':
+        for (let i = 0; i < 5; i++) this.tone(o, t + i * 0.045, 'sine', 900 * Math.pow(1.25, i), 700 * Math.pow(1.25, i), 0.12, 0.22);
+        this.burst(o, t, 'highpass', 5000, 3000, 0.25, 0.25);
+        break;
+      case 'meteor':
+        this.tone(o, t, 'sine', 1800, 250, 2.8, 0.35, 0.3);
+        this.burst(o, t, 'bandpass', 900, 300, 2.8, 0.3, 1.5);
         break;
     }
   }

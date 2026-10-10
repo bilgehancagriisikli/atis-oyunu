@@ -2,11 +2,26 @@
 import * as THREE from 'three';
 import { buildMap, HALF } from './map.js';
 import { PLAYER, stepCharacter, rayVsPlayer, rayVsBox, pointNearPlayer } from './physics.js';
-import { WEAPONS, WEAPON_ORDER, buildWeaponModel, hexColor, killName } from './weapons.js';
+import { WEAPONS, WEAPON_ORDER, STARTER, buildWeaponModel, hexColor, killName, setPolyNames } from './weapons.js';
 import { Effects } from './effects.js';
 import { Avatar } from './avatar.js';
-import { CRATE_FALL_H, CRATE_FALL_SPEED } from './host.js';
-import { VEH, VehicleView, stepMoto, stepChin } from './vehicles.js';
+import { CRATE_FALL_H, CRATE_FALL_SPEED, METEOR } from './host.js';
+import { VEH, VehicleView, stepMoto, stepAnimal } from './vehicles.js';
+import { SOLIDS, solidGeometry } from './polyhedra.js';
+import { LEGO_COLORS } from './textures.js';
+
+setPolyNames(SOLIDS.map((q) => q.name));
+const starterInv = () => Object.fromEntries(STARTER.map((w) => [w, Infinity]));
+
+// Tohumlu rastgele sayı (fraktal ağacı her oyuncuda aynı çıksın)
+function mulberry32(a) {
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const r3 = (v) => Math.round(v * 1000) / 1000;
@@ -18,8 +33,47 @@ const UP = new THREE.Vector3(0, 1, 0);
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const MOTO_COLORS = [0xd23b2b, 0x2f6db5, 0x2fa84f, 0xf2c230];
 const CRATE_COLORS = { h: 0x30e060, j: 0x3fa9ff, w: 0xffb627 };
+const BRICK_Y = 0.36; // Lego tuğlasının gövde merkezi yüksekliği
+const RIDE_RAM = { moto: 9, ham: 11 }; // bu hızın üstünde çarpılan oyuncu hasar alır
 // Jetpack ile havadayken daha iyi yön kontrolü
 const JET_BODY = { ...PLAYER, airAccel: 30 };
+
+// Doğru parçası (a + d·t, 0 ≤ t ≤ len) oyuncu gövdesine değiyor mu: ilk değdiği t ya da null
+function segNearPlayer(a, d, len, p, extra) {
+  const cx = p.x - a.x, cy = p.y + 0.9 - a.y, cz = p.z - a.z;
+  const tc = cx * d.x + cy * d.y + cz * d.z;
+  if (tc < -2 || tc > len + 2) return null;
+  if (cx * cx + cy * cy + cz * cz - tc * tc > 9) return null; // eksene 3 m'den uzak
+  const n = Math.max(1, Math.ceil(len / 0.25));
+  for (let k = 0; k <= n; k++) {
+    const t = (k / n) * len;
+    if (pointNearPlayer(a.x + d.x * t, a.y + d.y * t, a.z + d.z * t, p.x, p.y, p.z, extra)) return t;
+  }
+  return null;
+}
+
+// Düşen cismin üstündeki isim etiketi
+function labelTexture(text, fam) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 128;
+  const x = c.getContext('2d');
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.lineWidth = 8;
+  x.strokeStyle = 'rgba(0,0,0,0.8)';
+  x.font = 'bold 44px system-ui, sans-serif';
+  x.strokeText(text, 256, 50);
+  x.fillStyle = '#ffe6b0';
+  x.fillText(text, 256, 50);
+  x.font = 'bold 28px system-ui, sans-serif';
+  x.lineWidth = 6;
+  x.strokeText(fam + ' cismi', 256, 100);
+  x.fillStyle = '#ff9d5c';
+  x.fillText(fam + ' cismi', 256, 100);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 // Yol izleyen mermiler (sarmal testere, zikzak) için konum
 function pathPos(out, P, t, W) {
@@ -69,6 +123,7 @@ export class Game {
     this.tpFoot = false;
     this.selfAv = null;
     this.nearVeh = null;
+    this.meteors = [];
 
     const q = this.settings.quality;
     const r = new THREE.WebGLRenderer({ antialias: q === 'high', powerPreference: 'high-performance' });
@@ -111,7 +166,7 @@ export class Game {
 
     this.me = {
       id: -1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, onGround: false, yaw: 0, pitch: 0,
-      alive: false, hp: 100, inv: { pistol: Infinity }, cur: 'pistol', last: 'pistol',
+      alive: false, hp: 100, inv: starterInv(), cur: 'pistol', last: 'pistol',
       fireCd: 0, beamOn: false, beamTick: 0, spin: 0, slowUntil: 0, protUntil: 0,
       bob: 0, switchT: 0, deathAt: 0, respawnAt: 0,
       veh: null, jetpack: false, fuel: 0, jetting: false,
@@ -186,6 +241,7 @@ export class Game {
     for (const c of welcome.crates) this.addCrate(c, t);
     for (const h of welcome.holes || []) this.addHole(h);
     for (const v of welcome.vehicles || []) this.addVehicle(v);
+    for (const m of welcome.meteors || []) this.addMeteor(m);
     const mine = this.players.get(this.myId);
     this.selfAv = new Avatar(this.scene, { id: this.myId, name: mine ? mine.name : '', color: mine ? mine.color : 0xffffff });
     this.selfAv.tag.visible = false;
@@ -343,7 +399,7 @@ export class Game {
         if (msg.id === this.myId) {
           Object.assign(me, {
             x, y, z, vx: 0, vy: 0, vz: 0, yaw: msg.yaw, pitch: 0, alive: true, hp: 100, onGround: true,
-            inv: { pistol: Infinity }, cur: 'pistol', last: 'pistol', spin: 0, slowUntil: 0,
+            inv: starterInv(), cur: 'pistol', last: 'pistol', spin: 0, slowUntil: 0,
             protUntil: t + (msg.prot || 0), fireCd: 0.3, veh: null, jetpack: false, fuel: 0, jetting: false,
           });
           this.ride = null;
@@ -401,6 +457,11 @@ export class Game {
         if (victim) victim.deaths = msg.d;
         const wn = killName(msg.w);
         if (victim) this.hud.feed(killer, victim, wn, msg.a === this.myId || msg.tg === this.myId);
+        // Ölen oyuncunun bekleyen zeka küpleri söner
+        for (let i = this.projectiles.length - 1; i >= 0; i--) {
+          const q = this.projectiles[i];
+          if (q.kind === 'rubik' && q.owner === msg.tg) { q.fx.dispose(); this.projectiles.splice(i, 1); }
+        }
         if (msg.tg === this.myId) {
           me.alive = false;
           me.deathAt = t;
@@ -495,14 +556,56 @@ export class Game {
         if (v && v.rider == null) { [v.x, v.y, v.z] = msg.p; v.yaw = msg.yaw; }
         break;
       }
+      case 'vdmg': {
+        const v = this.vehicles.get(msg.v);
+        if (!v) break;
+        v.hp = msg.hp;
+        v.view.setHp(v.hp, VEH[v.kind].hp);
+        if (msg.a === this.myId && v.rider !== this.myId) { this.hud.hitmarker('hit'); this.sfx.play('hit'); }
+        if (v.rider === this.myId) { this.hud.hurt(null); this.sfx.play('crash', null, 0.3); }
+        break;
+      }
+      case 'vdead': {
+        // Araç parçalandı
+        const v = this.vehicles.get(msg.v);
+        if (!v) break;
+        v.dead = true;
+        v.hp = 0;
+        v.rider = null;
+        v.view.root.visible = false;
+        _a.fromArray(msg.p);
+        this.fx.vehicleBoom(_a.setY(_a.y + 0.8));
+        this.sfx.play('explosion', _a);
+        if (v.snd) { v.snd.stop(); v.snd = null; }
+        break;
+      }
+      case 'vspawn': {
+        const v = this.vehicles.get(msg.v);
+        if (!v) break;
+        v.dead = false;
+        v.rider = null;
+        v.hp = msg.hp;
+        [v.x, v.y, v.z] = msg.p;
+        v.yaw = msg.yaw;
+        v.px = v.x; v.pz = v.z;
+        v.view.root.visible = true;
+        v.view.setHp(v.hp, VEH[v.kind].hp);
+        this.fx.spawnFx(_a.fromArray(msg.p), 0xffffff);
+        break;
+      }
+      case 'met': this.addMeteor(msg); break;
       case 'crate': this.addCrate(msg.c, t); break;
       case 'cgone': {
         const c = this.crates.get(msg.id);
         if (c) {
           this.fx.pickup(c.group.position.clone().setY(c.group.position.y + 0.6), CRATE_COLORS[c.k]);
           this.scene.remove(c.group);
-          // Dokular paylaşımlı; yalnızca geometri ve malzemeleri bırak
-          c.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+          // Tuğla parçaları ve dokular paylaşımlı; yalnızca paraşüt ve ışık sütununu bırak
+          c.group.traverse((o) => {
+            if (o.userData.shared) return;
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) o.material.dispose();
+          });
           this.crates.delete(msg.id);
         }
         if (msg.by === this.myId && msg.k === 'h') this.hud.center('+50 CAN', '#3ee070', 1.5);
@@ -575,6 +678,7 @@ export class Game {
     this.updateCrates(dt, t);
     this.updateProjectiles(dt, t);
     this.updateHoles(t);
+    this.updateMeteors(dt, t);
     this.updateRemoteBeams(t);
     this.map.update(t);
 
@@ -590,7 +694,12 @@ export class Game {
 
     this.updateCamera(dt, t);
     // Atış, bu karenin kamera yönüyle yapılır (bir kare geriden nişan olmasın)
-    if (this.me.alive) this.updateWeapon(dt, t, this.controlsActive() && this.input.mouse[0]);
+    // Kısa tıklar düşük FPS'te iki kare arasında kaybolmasın diye basış sayacı da tetik sayılır
+    const [lc, , rc] = this.input.clicks;
+    this.input.clicks[0] = this.input.clicks[2] = 0;
+    if (this.me.alive) this.updateWeapon(dt, t, this.controlsActive() && (this.input.mouse[0] || lc > 0));
+    // Sağ tık: zeka küplerini patlat
+    if (rc && this.me.alive && this.controlsActive()) this.detonateCubes();
     this.updateMarker(t);
     this.jetParticles();
     this.sfx.setListener(this.camera.position.x, this.camera.position.y, this.camera.position.z, this.me.yaw);
@@ -673,7 +782,7 @@ export class Game {
         wish.jump = false;
         rem -= st;
       }
-      if (!wasGround && me.onGround && fallV < -13) this.sfx.play('land', null, 0.5);
+      if (!this.trampoline(me, fallV, PLAYER.radius) && !wasGround && me.onGround && fallV < -13) this.sfx.play('land', null, 0.5);
       if (me.y < -30) {
         const sp = this.map.spawns[0];
         me.x = sp.x; me.y = sp.y; me.z = sp.z; me.vx = me.vy = me.vz = 0;
@@ -690,48 +799,53 @@ export class Game {
     const wasGround = R.onGround;
     const fallV = R.vy;
     me.sprinting = false;
-    this.applyHoles(R, R.kind === 'chin' ? 1.5 : 0.8, dt);
-    let rem = dt, first = true;
+    this.applyHoles(R, R.kind === 'chin' ? 1.5 : R.kind === 'ham' ? 1.1 : 0.8, dt);
+    let rem = dt, first = true, crash = 0;
     while (rem > 1e-6) {
       const st = Math.min(rem, 1 / 60);
       if (R.kind === 'moto') stepMoto(this.world, R, { throttle: f, steer: s, hop: jump && first, boost: sprint }, st);
-      else stepChin(this.world, R, { wx, wz, sprint: this.input.down('ShiftLeft', 'ShiftRight'), jump: jump && first }, st);
+      else stepAnimal(this.world, R, { wx, wz, sprint: this.input.down('ShiftLeft', 'ShiftRight'), jump: jump && first }, st, R.kind);
+      crash = Math.max(crash, R.crash || 0);
       first = false;
       rem -= st;
+    }
+    const bounced = this.trampoline(R, fallV, D.body.radius);
+    // Engelden sekme sesi
+    if (crash > 0) {
+      this.sfx.play('crash', null, Math.min(1, crash / 18));
+      this.shake = Math.min(1, this.shake + crash * 0.03);
     }
     me.x = R.x; me.y = R.y + D.seatOff; me.z = R.z;
     me.vx = R.vx; me.vy = R.vy; me.vz = R.vz;
     me.onGround = R.onGround;
     const veh = this.vehicles.get(me.veh);
 
+    // Hızla çarpma (motosiklet, avurtlak)
+    const sp = Math.abs(R.speed);
+    if (RIDE_RAM[R.kind] && sp >= RIDE_RAM[R.kind]) {
+      const reach = D.body.radius + 0.9;
+      for (const p of this.players.values()) {
+        const av = p.avatar;
+        if (!av || !av.alive) continue;
+        const dx = av.pos.x - R.x, dz = av.pos.z - R.z, dy = av.pos.y - R.y;
+        if (dx * dx + dz * dz > reach * reach || dy < -1.2 || dy > 2.2 || t - (this.ramT[p.id] || 0) < 1) continue;
+        this.ramT[p.id] = t;
+        this.send({ t: 'ram', tg: p.id, k: R.kind, s: r2(sp) });
+        this.fx.hitPlayer(av.center(_a));
+        this.sfx.play('crash', av.pos, 0.6);
+        R.vx *= 0.75; R.vz *= 0.75;
+      }
+    }
     if (R.kind === 'moto') {
-      if (R.crash > 0) {
-        this.sfx.play('crash', null, Math.min(1, R.crash / 18));
-        this.shake = Math.min(1, this.shake + R.crash * 0.03);
-      }
-      if (!wasGround && R.onGround && fallV < -8) this.sfx.play('land', null, 0.6);
-      // Motosikletle çarpma
-      const sp = Math.abs(R.speed);
-      if (sp >= 9) {
-        for (const p of this.players.values()) {
-          const av = p.avatar;
-          if (!av || !av.alive) continue;
-          const dx = av.pos.x - R.x, dz = av.pos.z - R.z, dy = av.pos.y - R.y;
-          if (dx * dx + dz * dz > 1.5 * 1.5 || dy < -1.2 || dy > 2.2 || t - (this.ramT[p.id] || 0) < 1) continue;
-          this.ramT[p.id] = t;
-          this.send({ t: 'ram', tg: p.id, k: 'moto', s: r2(sp) });
-          this.fx.hitPlayer(av.center(_a));
-          this.sfx.play('crash', av.pos, 0.6);
-          R.vx *= 0.75; R.vz *= 0.75;
-        }
-      }
+      if (!bounced && !wasGround && R.onGround && fallV < -8) this.sfx.play('land', null, 0.6);
     } else {
       if (R.hopped) { R.hopped = false; this.sfx.play('squeak', null, 0.7); }
+      if (bounced) R.landed = 0;
       if (R.landed < -8) {
         if (veh) veh.view.land(Math.min(1, -R.landed / 20));
         this.sfx.play('stomp', null, Math.min(1, -R.landed / 18));
-        // Yüksekten inişte çevredekiler ezilir
-        if (R.landed < -12) {
+        // Yüksekten inişte çevredekiler ezilir (çinçilla)
+        if (R.kind === 'chin' && R.landed < -12) {
           this.fx.stomp(_a.set(R.x, R.y, R.z), 4);
           this.shake = Math.min(1, this.shake + 0.4);
           for (const p of this.players.values()) {
@@ -775,6 +889,23 @@ export class Game {
     }
   }
 
+  // Clypeaster fosilleri trambolin gibi zıplatır. b: oyuncu ya da araç gövdesi. fallV: inişten önceki dikey hız
+  trampoline(b, fallV, radius) {
+    for (const tr of this.map.trampolines) {
+      const dx = b.x - tr.x, dz = b.z - tr.z;
+      const rr = tr.r + radius * 0.5;
+      if (dx * dx + dz * dz > rr * rr || b.y < tr.y - 0.3 || b.y > tr.y + 0.75 || b.vy > 2) continue;
+      b.vy = Math.min(26, Math.max(17, -fallV * 0.85));
+      b.onGround = false;
+      b.jumped = true;
+      _a.set(tr.x, tr.y, tr.z);
+      this.fx.boing(_a);
+      this.sfx.play('boing', _a);
+      return true;
+    }
+    return false;
+  }
+
   flags() {
     const me = this.me;
     return (me.onGround ? 1 : 0) | (Math.hypot(me.vx, me.vz) > 0.5 ? 2 : 0) | (me.jetpack ? 4 : 0) | (me.jetting ? 8 : 0);
@@ -792,8 +923,11 @@ export class Game {
     const rec = {
       id: v.id, kind: v.k, x: v.p[0], y: v.p[1], z: v.p[2], yaw: v.yaw, rider: v.r ?? null, view, snd: null,
       cx: v.p[0], cy: v.p[1], cz: v.p[2], cyaw: v.yaw, px: v.p[0], pz: v.p[2], pyaw: v.yaw, speed: 0, lean: 0,
+      hp: v.hp ?? VEH[v.k].hp, dead: !!v.dead,
     };
     view.setPose(rec.x, rec.y, rec.z, rec.yaw);
+    view.setHp(rec.hp, VEH[v.k].hp);
+    view.root.visible = !rec.dead;
     this.vehicles.set(v.id, rec);
     if (rec.rider != null) {
       const p = this.players.get(rec.rider);
@@ -805,7 +939,7 @@ export class Game {
     const me = this.me;
     let best = null, bd = Infinity;
     for (const v of this.vehicles.values()) {
-      if (v.rider != null) continue;
+      if (v.rider != null || v.dead) continue;
       const d = Math.hypot(v.cx - me.x, v.cz - me.z);
       if (d <= VEH[v.kind].reach && Math.abs(me.y - v.cy) < 3 && d < bd) { bd = d; best = v; }
     }
@@ -855,6 +989,7 @@ export class Game {
   // Araç modellerini konumla, canlandır, motor sesini güncelle
   updateVehicles(dt, t) {
     for (const v of this.vehicles.values()) {
+      if (v.dead) continue;
       const D = VEH[v.kind];
       let x = v.x, y = v.y, z = v.z, yaw = v.yaw, onGround = true, steer = 0, lean = 0;
       if (v.rider === this.myId && this.ride) {
@@ -1018,7 +1153,7 @@ export class Game {
 
   dropWeapon(w) {
     const me = this.me;
-    if (w === 'pistol') return;
+    if (STARTER.includes(w)) return;
     delete me.inv[w];
     this.send({ t: 'empty', w });
     if (me.cur === w) {
@@ -1069,15 +1204,16 @@ export class Game {
     for (const p of this.players.values()) {
       const av = p.avatar;
       if (!av || !av.alive) continue;
-      let h = rayVsPlayer(o.x, o.y, o.z, d.x, d.y, d.z, maxT, av.pos.x, av.pos.y, av.pos.z);
-      if (av.mountKind) {
-        // Bindiği araca isabet de binicinin hasarıdır (daha az)
-        const V = VEH[av.mountKind], H = V.hit, by = av.pos.y - V.seatOff;
-        const tb = rayVsBox(o.x, o.y, o.z, d.x, d.y, d.z, h ? h.t : maxT,
-          av.pos.x - H.hw, by + H.y0, av.pos.z - H.hw, av.pos.x + H.hw, by + H.y1, av.pos.z + H.hw);
-        if (tb !== null && (!h || tb < h.t)) h = { t: tb, head: false, mt: true };
-      }
-      if (h) hits.push({ id: p.id, t: h.t, head: h.head, mt: !!h.mt });
+      const h = rayVsPlayer(o.x, o.y, o.z, d.x, d.y, d.z, maxT, av.pos.x, av.pos.y, av.pos.z);
+      if (h) hits.push({ id: p.id, t: h.t, head: h.head });
+    }
+    // Araçlar (binili ya da park halinde) ayrı hedeftir; isabeti araç canından düşer
+    for (const v of this.vehicles.values()) {
+      if (v.dead || v.rider === this.myId) continue;
+      const H = VEH[v.kind].hit;
+      const tb = rayVsBox(o.x, o.y, o.z, d.x, d.y, d.z, maxT,
+        v.cx - H.hw, v.cy + H.y0, v.cz - H.hw, v.cx + H.hw, v.cy + H.y1, v.cz + H.hw);
+      if (tb !== null) hits.push({ vid: v.id, t: tb, head: false });
     }
     hits.sort((a, b) => a.t - b.t);
     const used = pierce ? hits : hits.slice(0, 1);
@@ -1087,6 +1223,13 @@ export class Game {
       hits: used,
       wall: wall && (pierce || !used.length) ? wall : null,
     };
+  }
+
+  // İsabeti sunucuya bildir: oyuncuya 'hit', araca 'vhit'
+  sendHit(h, w, n = 1, head = false) {
+    if (h.vid != null) this.send({ t: 'vhit', v: h.vid, w, n });
+    else if (n > 1 || head) this.send({ t: 'hit', tg: h.id, w, n, hs: head ? 1 : 0 });
+    else this.send({ t: 'hit', tg: h.id, w });
   }
 
   updateWeapon(dt, t, trigger) {
@@ -1119,9 +1262,10 @@ export class Game {
     // Işınlanacak yer yoksa mermi harcanmaz
     if (W.type === 'teleport' && !this.fireTeleport(W, o, base)) { me.fireCd = 0.4; return; }
     me.fireCd = 1 / W.rate;
+    if (W.type === 'melee') { this.swingSword(W, o, base); return; }
     const muzzle = this.muzzleWorld(_c.clone());
-    this.recoil = Math.min(0.3, this.recoil + (W.recoil || 0.05));
-    me.pitch = Math.min(1.55, me.pitch + (W.recoil || 0.05) * 0.12);
+    this.recoil = Math.min(0.3, this.recoil + (W.recoil ?? 0.05));
+    me.pitch = Math.min(1.55, me.pitch + (W.recoil ?? 0.05) * 0.12);
     this.sfx.play(W.sound);
     this.fx.muzzle(muzzle, W.color, W.type === 'projectile' || W.type === 'rail');
 
@@ -1136,23 +1280,21 @@ export class Game {
         this.fx.tracer(muzzle, r.end, W.color, W.pellets ? 0.012 : 0.02);
         if (r.hits.length) {
           const h = r.hits[0];
-          const a = per.get(h.id) || { n: 0, head: 0, mt: 0 };
-          a.n++; if (h.head) a.head++; if (h.mt) a.mt++;
-          per.set(h.id, a);
+          const key = h.vid != null ? 'v' + h.vid : 'p' + h.id;
+          const a = per.get(key) || { h, n: 0, head: 0 };
+          a.n++; if (h.head) a.head++;
+          per.set(key, a);
+          if (h.vid != null) this.fx.impact(r.end, _a.set(0, 1, 0), W.color);
         } else if (r.wall) {
           this.fx.impact(r.end, _a.set(r.wall.nx, r.wall.ny, r.wall.nz), W.color);
         }
       }
-      for (const [id, a] of per) {
-        const m = { t: 'hit', tg: id, w, n: a.n, hs: a.head * 2 > a.n ? 1 : 0 };
-        if (a.mt === a.n) m.mt = 1;
-        this.send(m);
-      }
+      for (const a of per.values()) this.sendHit(a.h, w, a.n, a.head * 2 > a.n);
       this.send({ t: 'fire', w, o: v3(muzzle), e: ends });
     } else if (W.type === 'rail') {
       const r = this.trace(o, base, W.range, true);
       this.fx.rail(muzzle, r.end, W.color);
-      for (const h of r.hits) this.send(h.mt ? { t: 'hit', tg: h.id, w, mt: 1 } : { t: 'hit', tg: h.id, w, hs: h.head ? 1 : 0 });
+      for (const h of r.hits) this.sendHit(h, w, 1, h.head);
       if (r.wall) this.fx.impact(r.end, _a.set(r.wall.nx, r.wall.ny, r.wall.nz), W.color);
       this.shake = Math.min(1, this.shake + 0.2);
       this.send({ t: 'fire', w, o: v3(muzzle), e: [v3(r.end)] });
@@ -1167,16 +1309,151 @@ export class Game {
       const start = o.clone().addScaledVector(base, dist);
       start.y -= 0.12;
       const vel = base.clone().multiplyScalar(W.speed);
-      this.addProjectile({ id, w, local: true, pos: start, vel });
+      if (W.proj === 'rubik') vel.y += 3.5; // el bombası gibi kavisli atış
+      this.addProjectile({ id, w, local: true, pos: start, vel, owner: this.myId });
       this.send({ t: 'fire', w, o: v3(start), v: v3(vel), id });
     } else if (W.type === 'chain') {
       this.fireTesla(W, o, base, muzzle);
+    } else if (W.type === 'fractal') {
+      this.fireFractal(W, w, o, base, muzzle);
     }
 
     if (me.inv[w] !== Infinity) {
       me.inv[w] -= 1;
       if (me.inv[w] <= 0) this.dropWeapon(w);
     }
+  }
+
+  // Elmas kılıç: önümüzdeki koni içindeki en yakın hedeflere vurur (duvar arkasına değil)
+  swingSword(W, o, base) {
+    const me = this.me;
+    me.swingT = 0.32;
+    if (this.selfAv) this.selfAv.swing();
+    this.sfx.play(W.sound, null, 0.8);
+    const cands = [];
+    const consider = (h, c, extra) => {
+      const dx = c.x - o.x, dy = c.y - o.y, dz = c.z - o.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > W.reach + extra) return;
+      if (dist > 0.6) {
+        const cos = (dx * base.x + dy * base.y + dz * base.z) / dist;
+        if (Math.acos(Math.max(-1, Math.min(1, cos))) > W.arc) return;
+        const wall = this.world.raycast(o.x, o.y, o.z, dx / dist, dy / dist, dz / dist, dist);
+        if (wall && wall.t < dist - extra) return;
+      }
+      cands.push({ h, dist, pos: c.clone() });
+    };
+    for (const p of this.players.values()) {
+      const av = p.avatar;
+      if (av && av.alive) consider({ id: p.id }, av.center(_a), 0.4);
+    }
+    for (const v of this.vehicles.values()) {
+      if (v.dead || v.rider === this.myId) continue;
+      const H = VEH[v.kind].hit;
+      consider({ vid: v.id }, _a.set(v.cx, v.cy + (H.y0 + H.y1) / 2, v.cz), H.hw);
+    }
+    cands.sort((a, b) => a.dist - b.dist);
+    for (const c of cands.slice(0, W.maxTargets)) {
+      this.sendHit(c.h, 'sword');
+      this.fx.hitPlayer(c.pos, W.color);
+    }
+    if (cands.length) {
+      this.sfx.play('slash', null, 0.9);
+      this.shake = Math.min(1, this.shake + 0.12);
+    }
+    this.send({ t: 'fire', w: 'sword' });
+  }
+
+  // Fraktal ağacı: tek çizgi ilerler, ucunda ikiye ayrılır; her dal kısalarak aynı şeyi tekrarlar.
+  // Duvara çarpan dal orada biter. Tohum aynı olduğundan her oyuncuda aynı ağaç çıkar.
+  fractalTree(o, d, seed, W) {
+    const rnd = mulberry32(seed);
+    const segs = [];
+    const stack = [{ a: o.clone(), d: d.clone().normalize(), len: W.len, gen: 0 }];
+    const u = new THREE.Vector3(), w = new THREE.Vector3(), axis = new THREE.Vector3();
+    while (stack.length && segs.length < 200) {
+      const s = stack.pop();
+      const hit = this.world.raycast(s.a.x, s.a.y, s.a.z, s.d.x, s.d.y, s.d.z, s.len);
+      const L = hit ? Math.max(0.05, hit.t) : s.len;
+      const b = s.a.clone().addScaledVector(s.d, L);
+      segs.push({ a: s.a, b, d: s.d, len: L, gen: s.gen, tip: !!hit || s.gen >= W.depth, wall: hit });
+      if (hit || s.gen >= W.depth) continue;
+      // Dallar, yöne dik rastgele bir eksen etrafında iki yana açılır
+      u.crossVectors(s.d, Math.abs(s.d.y) < 0.95 ? UP : _d.set(1, 0, 0)).normalize();
+      w.crossVectors(u, s.d).normalize();
+      const roll = rnd() * Math.PI * 2;
+      axis.copy(u).multiplyScalar(Math.cos(roll)).addScaledVector(w, Math.sin(roll));
+      // Biri neredeyse düz devam eder (nişan hattı boş kalmasın), öteki yana sapar
+      const main = W.angle * (0.12 + rnd() * 0.22);
+      const side = -W.angle * (0.85 + rnd() * 0.4);
+      for (const [ang, k] of [[side, 0.9], [main, 1]]) {
+        stack.push({ a: b, d: s.d.clone().applyAxisAngle(axis, ang).normalize(), len: s.len * W.ratio * k * (0.9 + rnd() * 0.2), gen: s.gen + 1 });
+      }
+    }
+    return segs;
+  }
+
+  fireFractal(W, w, o, base, muzzle) {
+    const seed = (Math.random() * 0x7fffffff) | 0;
+    const ro = new THREE.Vector3(r2(o.x), r2(o.y), r2(o.z));
+    const rd = new THREE.Vector3(r3(base.x), r3(base.y), r3(base.z)).normalize();
+    const segs = this.fractalTree(ro, rd, seed, W);
+    // Her dal parçası değdiği hedefe bir kez işler (en fazla maxHits). Dallar biraz kalın sayılır.
+    const per = new Map();
+    const T = 0.25;
+    for (const sg of segs) {
+      const a = sg.a, d = sg.d;
+      for (const p of this.players.values()) {
+        const av = p.avatar;
+        if (!av || !av.alive) continue;
+        const ht = segNearPlayer(a, d, sg.len, av.pos, T);
+        if (ht === null) continue;
+        const e = per.get('p' + p.id) || { h: { id: p.id }, n: 0, pos: a.clone().addScaledVector(d, ht) };
+        e.n++;
+        per.set('p' + p.id, e);
+      }
+      for (const v of this.vehicles.values()) {
+        if (v.dead || v.rider === this.myId) continue;
+        const H = VEH[v.kind].hit, hw = H.hw + T;
+        const tb = rayVsBox(a.x, a.y, a.z, d.x, d.y, d.z, sg.len, v.cx - hw, v.cy + H.y0 - T, v.cz - hw, v.cx + hw, v.cy + H.y1 + T, v.cz + hw);
+        if (tb === null) continue;
+        const e = per.get('v' + v.id) || { h: { vid: v.id }, n: 0, pos: a.clone().addScaledVector(d, tb) };
+        e.n++;
+        per.set('v' + v.id, e);
+      }
+    }
+    for (const e of per.values()) {
+      this.sendHit(e.h, w, Math.min(W.maxHits, e.n));
+      this.fx.hitPlayer(e.pos, W.color);
+    }
+    this.drawFractal(segs, muzzle, W);
+    this.send({ t: 'fire', w, o: [ro.x, ro.y, ro.z], d: [rd.x, rd.y, rd.z], s: seed });
+  }
+
+  // Kök dal silahın ucundan başlar (göz hizasından değil)
+  drawFractal(segs, muzzle, W) {
+    if (!segs.length) return;
+    const draw = segs.map((sg) => ({ a: sg.a, b: sg.b, gen: sg.gen, tip: sg.tip }));
+    draw[0] = { ...draw[0], a: muzzle.clone() };
+    this.fx.fractal(draw, W.color, W.depth);
+    for (const sg of segs) {
+      if (sg.wall) this.fx.later(sg.gen * 0.045, () => this.fx.impact(sg.b, _a.set(sg.wall.nx, sg.wall.ny, sg.wall.nz), W.color));
+    }
+  }
+
+  // Sağ tık: atılmış tüm zeka küplerini patlat
+  detonateCubes() {
+    let n = 0;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (!p.local || p.kind !== 'rubik' || p.stopped) continue;
+      this.detonate(p, p.pos);
+      p.fx.dispose();
+      this.projectiles.splice(i, 1);
+      n++;
+    }
+    if (n) this.sfx.play('click');
+    return n;
   }
 
   // Sarmal testere / zikzak: yolu belli mermiler (uzak oyuncular aynı yolu çizer)
@@ -1192,7 +1469,7 @@ export class Game {
     for (let i = 0; i < n; i++) {
       const id = this.myId * 100000 + (++this.projSeq % 100000);
       ids.push(id);
-      this.addProjectile({ id, w, local: true, pos: start.clone(), path: { o: start.clone(), d: d.clone(), ph: (i / n) * Math.PI * 2 } });
+      this.addProjectile({ id, w, local: true, owner: this.myId, pos: start.clone(), path: { o: start.clone(), d: d.clone(), ph: (i / n) * Math.PI * 2 } });
     }
     this.send({ t: 'fire', w, o: v3(start), d: [d.x, d.y, d.z].map(r3), ids });
   }
@@ -1320,9 +1597,7 @@ export class Game {
       if (me.beamTick <= 0) {
         me.beamTick = W.tick;
         if (r.hits.length) {
-          const m = { t: 'hit', tg: r.hits[0].id, w: me.cur };
-          if (r.hits[0].mt) m.mt = 1;
-          this.send(m);
+          this.sendHit(r.hits[0], me.cur, 1, false);
           this.fx.hitPlayer(r.end, W.color);
         }
       }
@@ -1350,7 +1625,12 @@ export class Game {
     if (!p || !p.avatar || !W) return;
     const av = p.avatar;
     av.lastFire = now();
-    const muzzle = av.alive ? av.muzzleWorld(_a.clone()) : (msg.o ? new THREE.Vector3().fromArray(msg.o) : av.eye(_a.clone()));
+    if (W.type === 'melee') {
+      av.swing();
+      this.sfx.play(W.sound, av.pos, 0.8);
+      return;
+    }
+    const muzzle = av.alive ? av.muzzleWorld(_a.clone()) : (Array.isArray(msg.o) ? new THREE.Vector3().fromArray(msg.o) : av.eye(_a.clone()));
     this.sfx.play(W.sound, av.pos);
     this.fx.muzzle(muzzle, W.color, W.type !== 'hitscan');
     if (W.type === 'hitscan' && Array.isArray(msg.e)) {
@@ -1366,11 +1646,15 @@ export class Game {
       const d = new THREE.Vector3().fromArray(msg.d).normalize();
       const n = msg.ids.length;
       msg.ids.forEach((id, i) => {
-        this.addProjectile({ id, w: msg.w, local: false, pos: start.clone(), path: { o: start.clone(), d: d.clone(), ph: (i / n) * Math.PI * 2 } });
+        this.addProjectile({ id, w: msg.w, local: false, owner: msg.by, pos: start.clone(), path: { o: start.clone(), d: d.clone(), ph: (i / n) * Math.PI * 2 } });
       });
     } else if (W.type === 'projectile' && msg.v) {
       const start = new THREE.Vector3().fromArray(msg.o);
-      this.addProjectile({ id: msg.id, w: msg.w, local: false, pos: start, vel: new THREE.Vector3().fromArray(msg.v) });
+      this.addProjectile({ id: msg.id, w: msg.w, local: false, owner: msg.by, pos: start, vel: new THREE.Vector3().fromArray(msg.v) });
+    } else if (W.type === 'fractal' && Array.isArray(msg.o) && Array.isArray(msg.d)) {
+      const o = new THREE.Vector3().fromArray(msg.o), d = new THREE.Vector3().fromArray(msg.d);
+      if (![o.x, o.y, o.z, d.x, d.y, d.z].every(Number.isFinite) || d.lengthSq() < 0.5) return;
+      this.drawFractal(this.fractalTree(o, d, msg.s | 0, W), muzzle, W);
     }
   }
 
@@ -1451,14 +1735,17 @@ export class Game {
   }
 
   // Nokta bir oyuncuya (ya da bindiği araca) değiyor mu
-  // boxExtra: araç kutusunun büyütmesi (zikzak tapası binicide büyük, araçta küçük olsun)
-  pointHitsAvatar(av, x, y, z, extra, boxExtra = extra) {
+  // Nokta bir oyuncuya değiyor mu
+  pointHitsAvatar(av, x, y, z, extra) {
     const ap = av.pos;
-    if (pointNearPlayer(x, y, z, ap.x, ap.y, ap.z, extra)) return true;
-    if (!av.mountKind) return false;
-    const V = VEH[av.mountKind], H = V.hit, by = ap.y - V.seatOff;
-    const hw = H.hw + boxExtra;
-    return Math.abs(x - ap.x) < hw && Math.abs(z - ap.z) < hw && y > by + H.y0 - boxExtra && y < by + H.y1 + boxExtra;
+    return pointNearPlayer(x, y, z, ap.x, ap.y, ap.z, extra);
+  }
+
+  // Nokta bir aracın gövdesine değiyor mu (kendi bindiğimiz hariç)
+  pointHitsVehicle(v, x, y, z, extra) {
+    if (v.dead || v.rider === this.myId) return false;
+    const H = VEH[v.kind].hit, hw = H.hw + extra;
+    return Math.abs(x - v.cx) < hw && Math.abs(z - v.cz) < hw && y > v.cy + H.y0 - extra && y < v.cy + H.y1 + extra;
   }
 
   // Sarmal testere / zikzak. true dönerse mermi silinir.
@@ -1485,7 +1772,7 @@ export class Game {
           const f = (k / n) * pathLen;
           const x = p.pos.x + seg.x * f, y = p.pos.y + seg.y * f, z = p.pos.z + seg.z * f;
           // Zikzak topunun yakınlık tapası var
-          if (!this.pointHitsAvatar(av, x, y, z, p.kind === 'zig' ? W.fuse : 0.2, 0.2)) continue;
+          if (!this.pointHitsAvatar(av, x, y, z, p.kind === 'zig' ? W.fuse : 0.2)) continue;
           if (p.kind === 'saw') {
             // Testere içinden geçer: her oyuncuya bir kez
             p.hits.add(q.id);
@@ -1496,6 +1783,22 @@ export class Game {
           break;
         }
         if (zigAt) break;
+      }
+      // Araçlar: testere hasar verir (her araca bir kez), zikzak patlar
+      for (const v of this.vehicles.values()) {
+        if (zigAt || p.hits.has('v' + v.id)) continue;
+        for (let k = 1; k <= n; k++) {
+          const f = (k / n) * pathLen;
+          const x = p.pos.x + seg.x * f, y = p.pos.y + seg.y * f, z = p.pos.z + seg.z * f;
+          if (!this.pointHitsVehicle(v, x, y, z, 0.2)) continue;
+          if (p.kind === 'saw') {
+            p.hits.add('v' + v.id);
+            this.send({ t: 'vhit', v: v.id, w: p.w, n: 1 });
+            this.fx.impact(_c.set(x, y, z), _d.set(0, 1, 0), 0xffd27a);
+            this.sfx.play('sawhit', _c, 0.8);
+          } else zigAt = new THREE.Vector3(x, y, z);
+          break;
+        }
       }
     }
     p.vel.copy(seg).multiplyScalar(len / Math.max(dt, 1e-4));
@@ -1544,13 +1847,16 @@ export class Game {
         }
         continue;
       }
-      if (p.t > (p.local ? 8 : 10)) {
+      const life = W.life || 8;
+      if (p.t > (p.local ? life : life + 2)) {
         if (p.local) this.detonate(p, p.pos);
         p.fx.dispose();
         this.projectiles.splice(i, 1);
         continue;
       }
       if (p.stopped) continue;
+      // Yerde duran zeka küpü patlatılmayı bekler
+      if (p.rest) { p.fx.trail(dt, t); continue; }
       p.vel.y -= (W.grav || 0) * dt;
       const step = p.vel.length() * dt;
       const dir = _a.copy(p.vel).normalize();
@@ -1561,12 +1867,16 @@ export class Game {
         // Yol boyunca 0.3 m aralıklarla kontrol (düşük FPS'te oyuncunun içinden geçmesin)
         const pathLen = hit ? Math.min(step, hit.t) : step;
         const n = Math.max(1, Math.ceil(pathLen / 0.3));
-        for (const q of this.players.values()) {
+        // Oyuncu ya da araç (zeka küpü değmeyle patlamaz)
+        const targets = p.kind === 'rubik' ? [] : [
+          ...[...this.players.values()].filter((q) => q.avatar && q.avatar.alive).map((q) => (x, y, z) => this.pointHitsAvatar(q.avatar, x, y, z, 0.15)),
+          ...[...this.vehicles.values()].map((v) => (x, y, z) => this.pointHitsVehicle(v, x, y, z, 0.15)),
+        ];
+        for (const touch of targets) {
           if (hitPlayer) break;
-          if (!q.avatar || !q.avatar.alive) continue;
           for (let k = 1; k <= n; k++) {
             const f = (k / n) * pathLen;
-            if (this.pointHitsAvatar(q.avatar, p.pos.x + dir.x * f, p.pos.y + dir.y * f, p.pos.z + dir.z * f, 0.15)) {
+            if (touch(p.pos.x + dir.x * f, p.pos.y + dir.y * f, p.pos.z + dir.z * f)) {
               hitPlayer = true;
               next.copy(p.pos).addScaledVector(dir, f);
               break;
@@ -1575,7 +1885,24 @@ export class Game {
         }
       }
       let explodeAt = null;
-      if (p.kind === 'grenade') {
+      if (p.kind === 'rubik') {
+        // Seker, yuvarlanır, durur; sağ tıkla (ya da süre bitince) patlar
+        if (hit) {
+          const n = _c.set(hit.nx, hit.ny, hit.nz);
+          p.pos.addScaledVector(dir, Math.max(0, hit.t - 0.05)).addScaledVector(n, 0.05);
+          const vn = p.vel.dot(n);
+          p.vel.addScaledVector(n, -2 * vn).multiplyScalar(0.42);
+          if (n.y > 0.6) {
+            p.vel.x *= 0.7; p.vel.z *= 0.7;
+            if (p.vel.length() < 1.5) {
+              p.rest = true;
+              p.vel.set(0, 0, 0);
+              p.pos.y += 0.1;
+            }
+          }
+          if (Math.abs(vn) > 2) this.sfx.play('cubehit', p.pos, 0.5);
+        } else p.pos.copy(next);
+      } else if (p.kind === 'grenade') {
         if (hit) {
           const n = _c.set(hit.nx, hit.ny, hit.nz);
           p.pos.addScaledVector(dir, Math.max(0, hit.t - 0.05)).addScaledVector(n, 0.05);
@@ -1593,7 +1920,11 @@ export class Game {
       } else p.pos.copy(next);
 
       p.fx.obj.position.copy(p.pos);
-      if (p.vel.lengthSq() > 0.01) p.fx.obj.lookAt(_d.copy(p.pos).sub(p.vel));
+      if (p.kind === 'rubik') {
+        const sp = p.vel.length();
+        p.fx.spinner.rotation.x += dt * sp * 2.5;
+        p.fx.spinner.rotation.z += dt * sp * 1.7;
+      } else if (p.vel.lengthSq() > 0.01) p.fx.obj.lookAt(_d.copy(p.pos).sub(p.vel));
       p.fx.trail(dt, t);
 
       if (explodeAt) {
@@ -1650,14 +1981,82 @@ export class Game {
   }
 
   // --------------------------------------------------------
+  // Gökten düşen çokyüzlüler (Platon, Arşimet, Kepler-Poinsot)
+  addMeteor(m) {
+    const S = SOLIDS[m.s];
+    if (!S || !Array.isArray(m.p) || this.meteors.some((q) => q.id === m.id)) return;
+    const geo = solidGeometry(m.s, 3.2);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+      vertexColors: true, flatShading: true, emissive: 0x2a1000, side: geo.userData.star ? THREE.DoubleSide : THREE.FrontSide,
+    }));
+    mesh.castShadow = true;
+    const pos = new THREE.Vector3().fromArray(m.p);
+    // Yerde uyarı halkası: patlama alanı
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(METEOR.radius - 0.35, METEOR.radius, 48).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(METEOR.radius, 48).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    ring.add(disc);
+    ring.position.set(pos.x, pos.y + 0.06, pos.z);
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture(S.name, S.fam), depthWrite: false, fog: false }));
+    label.scale.set(12, 3, 1);
+    this.scene.add(mesh, ring, label);
+    // Biraz eğik düşsün (iz görünsün); yön kimlikten türetilir, herkeste aynı
+    const a = m.id * 2.399;
+    const rec = {
+      id: m.id, s: m.s, pos, mesh, ring, label, born: now() - (m.age || 0), dur: Math.max(0.2, m.dur || METEOR.fall),
+      ox: Math.cos(a) * 16, oz: Math.sin(a) * 16, spin: new THREE.Vector3(Math.sin(a * 3), 1, Math.cos(a * 5)).normalize(),
+    };
+    this.meteors.push(rec);
+    if ((m.age || 0) < 0.5) {
+      this.sfx.play('meteor', pos, 0.9);
+      const d = Math.hypot(pos.x - this.me.x, pos.z - this.me.z);
+      if (d < 45) this.hud.center(`⚠ GÖKTEN ${S.name.toLocaleUpperCase('tr')} DÜŞÜYOR!`, '#ff7b3a', 2);
+    }
+    this.updateMeteors(0, now());
+  }
+
+  updateMeteors(dt, t) {
+    for (let i = this.meteors.length - 1; i >= 0; i--) {
+      const m = this.meteors[i];
+      const k = (t - m.born) / m.dur;
+      if (k >= 1) {
+        // Yere çarptı: patlama (hasarı sunucu verir)
+        _a.set(m.pos.x, m.pos.y + 1, m.pos.z);
+        this.explosionFx(_a, METEOR.radius, m.s < 5 ? 0xffb030 : m.s < 20 ? 0xff6a2a : 0xd060ff);
+        this.fx.dust(m.pos);
+        this.scene.remove(m.mesh, m.ring, m.label);
+        // Geometri önbellekte paylaşımlı; yalnızca malzemeyi bırak
+        m.mesh.material.dispose();
+        m.ring.traverse((o) => { o.geometry.dispose(); o.material.dispose(); });
+        m.label.material.map.dispose();
+        m.label.material.dispose();
+        this.meteors.splice(i, 1);
+        continue;
+      }
+      const f = 1 - k * k;
+      const y = m.pos.y + 2 + METEOR.height * f;
+      m.mesh.position.set(m.pos.x + m.ox * f, y, m.pos.z + m.oz * f);
+      m.mesh.rotateOnAxis(m.spin, dt * 2.6);
+      m.label.position.set(m.mesh.position.x, y + 5, m.mesh.position.z);
+      m.ring.material.opacity = 0.45 + 0.35 * Math.sin(t * (8 + k * 14));
+      const sc = 0.6 + 0.4 * k;
+      m.ring.scale.set(sc, 1, sc);
+      if (dt > 0) this.fx.meteorTrail(m.mesh.position, m.s < 5 ? 0xffb030 : m.s < 20 ? 0xff7a2a : 0xd070ff);
+    }
+  }
+
+  // --------------------------------------------------------
   // Paraşütlü kutular
   addCrate(c, t) {
     if (this.crates.has(c.id)) return;
     const g = new THREE.Group();
-    const tex = c.k === 'h' ? this.crateTex.crateH : c.k === 'j' ? this.crateTex.crateJ : this.crateTex.crateW;
-    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ map: tex }));
-    box.position.y = 0.5;
-    box.castShadow = true;
+    const box = this.legoBrick(c.k);
+    box.position.y = BRICK_Y;
     g.add(box);
     const col = CRATE_COLORS[c.k] || CRATE_COLORS.w;
     const pillar = new THREE.Mesh(
@@ -1678,12 +2077,42 @@ export class Game {
     const pts = [];
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      pts.push(new THREE.Vector3(Math.cos(a) * 1.65, 3.6, Math.sin(a) * 1.65), new THREE.Vector3(0, 1, 0));
+      pts.push(new THREE.Vector3(Math.cos(a) * 1.65, 3.6, Math.sin(a) * 1.65), new THREE.Vector3(0, 0.85, 0));
     }
     chute.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x333333 })));
     g.add(chute);
     this.scene.add(g);
     this.crates.set(c.id, { ...c, group: g, box, chute, born: t - c.age, landed: false, pickSent: 0 });
+  }
+
+  // 2x2 Lego tuğlası (malzeme ve geometri tüm kutularda ortak)
+  legoBrick(k) {
+    const kind = LEGO_COLORS[k] ? k : 'w';
+    this.lego ||= {
+      body: new THREE.BoxGeometry(1, 0.7, 1),
+      stud: new THREE.CylinderGeometry(0.16, 0.16, 0.14, 16),
+      mats: {},
+    };
+    const L = this.lego;
+    if (!L.mats[kind]) {
+      const plain = new THREE.MeshPhongMaterial({ color: LEGO_COLORS[kind], shininess: 70, specular: 0x555555 });
+      const tex = this.crateTex[kind === 'h' ? 'legoH' : kind === 'j' ? 'legoJ' : 'legoW'];
+      const side = new THREE.MeshPhongMaterial({ map: tex, shininess: 70, specular: 0x555555 });
+      L.mats[kind] = { plain, sides: [side, side, plain, plain, side, side] };
+    }
+    const M = L.mats[kind];
+    const brick = new THREE.Group();
+    const body = new THREE.Mesh(L.body, M.sides);
+    body.castShadow = true;
+    brick.add(body);
+    for (const [x, z] of [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]]) {
+      const st = new THREE.Mesh(L.stud, M.plain);
+      st.position.set(x, 0.35 + 0.07, z);
+      st.castShadow = true;
+      brick.add(st);
+    }
+    brick.traverse((o) => { o.userData.shared = true; });
+    return brick;
   }
 
   updateCrates(dt, t) {
@@ -1702,13 +2131,13 @@ export class Game {
       }
       if (!landed) c.chute.rotation.y += dt * 0.6;
       c.box.rotation.y += dt * (landed ? 0.8 : 0.2);
-      c.box.position.y = 0.5 + (landed ? Math.sin(t * 2 + c.id) * 0.06 + 0.06 : 0);
+      c.box.position.y = BRICK_Y + (landed ? Math.sin(t * 2 + c.id) * 0.06 + 0.06 : 0);
       if (!me.alive) continue;
       // Araçtayken aracın tabanına göre (çinçillanın üstünden de alınır)
       const reachR = me.veh && this.ride ? (this.ride.kind === 'chin' ? 2.2 : 1.6) : 1.4;
       const footY = me.veh && this.ride ? this.ride.y : me.y;
       const dx = c.x - me.x, dz = c.z - me.z;
-      if (dx * dx + dz * dz < reachR * reachR && Math.abs(footY + 0.9 - (h + 0.5)) < 1.6 && t - c.pickSent > 0.6) {
+      if (dx * dx + dz * dz < reachR * reachR && Math.abs(footY + 0.9 - (h + BRICK_Y)) < 1.6 && t - c.pickSent > 0.6) {
         if (c.k === 'h' && me.hp >= 100) {
           if (t - (c.fullMsg || 0) > 3) { c.fullMsg = t; this.hud.center('Canın zaten dolu', '#aaa', 1); }
           continue;
@@ -1737,6 +2166,19 @@ export class Game {
     const h = this.vmHolder;
     h.position.set(0.2 + bx + this.vmSway.x, -0.19 + by - sw * 0.25 + this.vmSway.y - this.recoil * 0.1, -0.4 + this.recoil * 0.35);
     h.rotation.set(this.recoil * 1.4 + sw * -0.6, this.vmSway.x * 2, 0);
+    // Kılıç savurma: sağ üstten sol alta çapraz kesiş
+    if (me.swingT > 0) {
+      me.swingT = Math.max(0, me.swingT - dt);
+      const k = 1 - me.swingT / 0.32;
+      const a = Math.sin(Math.min(1, k * 1.25) * Math.PI);
+      const cut = k < 0.8 ? k / 0.8 : 1;
+      h.position.x += 0.05 - cut * 0.22 * a;
+      h.position.y += 0.06 * a - cut * 0.08 * a;
+      h.position.z -= 0.12 * a;
+      h.rotation.x -= 0.9 * a;
+      h.rotation.y += 0.5 * a;
+      h.rotation.z += 0.8 * a;
+    }
     if (this.vm.spin) this.vm.spin.rotation.z += dt * (me.cur === 'minigun' ? 2 + me.spin * 40 : 3);
     for (const g of this.vm.glows) g.scale.setScalar(1 + Math.sin(t * 9) * 0.08);
   }
@@ -1758,11 +2200,14 @@ export class Game {
     }
     const holes = this.holes.map((h) => ({ x: h.pos.x, z: h.pos.z, k: h.k }));
     const vehicles = [];
-    for (const v of this.vehicles.values()) if (v.rider == null) vehicles.push({ x: v.cx, z: v.cz, k: v.kind });
+    for (const v of this.vehicles.values()) if (v.rider == null && !v.dead) vehicles.push({ x: v.cx, z: v.cz, k: v.kind });
+    const meteors = this.meteors.map((m) => ({ x: m.pos.x, z: m.pos.z, r: METEOR.radius }));
     const view = { x: me.x, z: me.z, yaw: me.yaw };
-    hud.drawMinimap(this.map.minimap, view, crates, blips, holes, vehicles);
-    if (this.bigMap) hud.drawBigMap(this.map.minimap, view, crates, blips, holes, vehicles);
+    hud.drawMinimap(this.map.minimap, view, crates, blips, holes, vehicles, meteors);
+    if (this.bigMap) hud.drawBigMap(this.map.minimap, view, crates, blips, holes, vehicles, meteors);
     hud.setJet(me.alive && me.jetpack && !me.veh ? me.fuel : -1, me.jetting);
+    const myVeh = me.alive && me.veh ? this.vehicles.get(me.veh) : null;
+    if (myVeh) hud.setVehicleHp(myVeh.kind, myVeh.hp, VEH[myVeh.kind].hp); else hud.setVehicleHp(null);
     let prompt = '';
     if (me.alive && me.veh && this.ride) {
       prompt = '[E] İn · [V] Kamera';

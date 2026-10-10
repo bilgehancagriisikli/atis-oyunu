@@ -143,42 +143,71 @@ function grass() {
   return toTex(c);
 }
 
-function crateFace(kind) {
+// Lego tuğla yan yüzü: parlak plastik renk + beyaz sembol
+export const LEGO_COLORS = { w: '#f5a300', h: '#1fa64a', j: '#1e6fe0' };
+function legoFace(kind) {
   const S = 128, c = cnv(S), x = c.getContext('2d');
-  if (kind === 'j') {
-    // Jetpack kutusu: lacivert üzerine iki tüplü sırt çantası ve alevler
-    x.fillStyle = '#16243a'; x.fillRect(0, 0, S, S);
-    x.strokeStyle = '#3fa9ff'; x.lineWidth = 8; x.strokeRect(4, 4, S - 8, S - 8);
-    x.fillStyle = '#ff9a2a';
-    for (const cx of [44, 84]) {
-      x.beginPath(); x.moveTo(cx - 10, 86); x.lineTo(cx + 10, 86); x.lineTo(cx, 112); x.fill();
-    }
-    x.fillStyle = '#cfd8e3';
-    for (const cx of [44, 84]) {
-      x.beginPath();
-      x.roundRect ? x.roundRect(cx - 14, 26, 28, 60, 12) : x.rect(cx - 14, 26, 28, 60);
-      x.fill();
-    }
-    x.fillStyle = '#3fa9ff'; x.fillRect(56, 40, 16, 34);
-    noise(x, S, S, 10);
-    const t = toTex(c);
-    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-    return t;
-  }
+  const col = LEGO_COLORS[kind];
+  const g = x.createLinearGradient(0, 0, 0, S);
+  g.addColorStop(0, col); g.addColorStop(1, shade(col, -0.18));
+  x.fillStyle = g; x.fillRect(0, 0, S, S);
+  x.fillStyle = 'rgba(255,255,255,0.18)'; x.fillRect(0, 0, S, 6);
+  x.fillStyle = 'rgba(0,0,0,0.18)'; x.fillRect(0, S - 6, S, 6);
+  x.fillStyle = '#ffffff';
+  x.strokeStyle = 'rgba(0,0,0,0.35)'; x.lineWidth = 4;
   if (kind === 'h') {
-    x.fillStyle = '#eef2ee'; x.fillRect(0, 0, S, S);
-    x.fillStyle = '#21b24b';
-    x.fillRect(S / 2 - 14, 22, 28, S - 44);
-    x.fillRect(22, S / 2 - 14, S - 44, 28);
-    x.strokeStyle = '#9aa39b'; x.lineWidth = 8; x.strokeRect(4, 4, S - 8, S - 8);
+    x.fillRect(S / 2 - 12, 30, 24, 68); x.fillRect(30, S / 2 - 12, 68, 24);
+  } else if (kind === 'j') {
+    for (const cx of [46, 82]) { x.beginPath(); x.roundRect ? x.roundRect(cx - 12, 30, 24, 50, 10) : x.rect(cx - 12, 30, 24, 50); x.fill(); }
+    x.fillStyle = '#ffcc4d';
+    for (const cx of [46, 82]) { x.beginPath(); x.moveTo(cx - 9, 82); x.lineTo(cx + 9, 82); x.lineTo(cx, 104); x.fill(); }
   } else {
-    x.fillStyle = '#30343a'; x.fillRect(0, 0, S, S);
-    x.strokeStyle = '#ffb627'; x.lineWidth = 10; x.strokeRect(5, 5, S - 10, S - 10);
-    x.fillStyle = '#ffb627';
-    x.font = 'bold 84px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.fillText('?', S / 2, S / 2 + 6);
+    x.font = 'bold 82px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.strokeText('?', S / 2, S / 2 + 6); x.fillText('?', S / 2, S / 2 + 6);
   }
-  noise(x, S, S, 12);
+  const t = toTex(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+
+function shade(hex, k) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v) => Math.max(0, Math.min(255, Math.round(v * (1 + k))));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+
+// Clypeaster fosili (üstten görünüş): krem taş, beş yapraklı desen, ince çizgiler
+function fossil() {
+  const S = 256, c = cnv(S), x = c.getContext('2d');
+  const g = x.createRadialGradient(S / 2, S / 2, 10, S / 2, S / 2, S / 2);
+  g.addColorStop(0, '#e6d8b4'); g.addColorStop(0.8, '#cdb88c'); g.addColorStop(1, '#a8916a');
+  x.fillStyle = g; x.fillRect(0, 0, S, S);
+  noise(x, S, S, 22);
+  x.translate(S / 2, S / 2);
+  // Beş yaprak (petaloid)
+  for (let i = 0; i < 5; i++) {
+    x.save();
+    x.rotate((i / 5) * Math.PI * 2 - Math.PI / 2);
+    x.beginPath();
+    x.ellipse(0, -52, 17, 46, 0, 0, Math.PI * 2);
+    x.fillStyle = 'rgba(120,96,60,0.35)'; x.fill();
+    x.strokeStyle = 'rgba(80,60,35,0.75)'; x.lineWidth = 3; x.stroke();
+    // Yaprak içindeki gözenek sıraları
+    x.fillStyle = 'rgba(70,52,30,0.7)';
+    for (let k = 0; k < 9; k++) {
+      const yy = -16 - k * 8.5, w = Math.sin(((k + 1) / 10) * Math.PI) * 12;
+      x.beginPath(); x.arc(-w, yy, 1.6, 0, Math.PI * 2); x.arc(w, yy, 1.6, 0, Math.PI * 2); x.fill();
+    }
+    x.restore();
+  }
+  // Merkez ve ışınsal ince çizgiler
+  x.fillStyle = 'rgba(80,60,35,0.8)'; x.beginPath(); x.arc(0, 0, 7, 0, Math.PI * 2); x.fill();
+  x.strokeStyle = 'rgba(90,70,40,0.25)'; x.lineWidth = 1.5;
+  for (let i = 0; i < 40; i++) {
+    const a = (i / 40) * Math.PI * 2;
+    x.beginPath(); x.moveTo(Math.cos(a) * 100, Math.sin(a) * 100); x.lineTo(Math.cos(a) * 126, Math.sin(a) * 126); x.stroke();
+  }
+  x.setTransform(1, 0, 0, 1, 0, 0);
   const t = toTex(c);
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
   return t;
@@ -206,8 +235,9 @@ export function makeTextures() {
     hazard: hazard(),
     roof: roof(),
     grass: grass(),
-    crateW: crateFace('w'),
-    crateH: crateFace('h'),
-    crateJ: crateFace('j'),
+    legoW: legoFace('w'),
+    legoH: legoFace('h'),
+    legoJ: legoFace('j'),
+    fossil: fossil(),
   };
 }

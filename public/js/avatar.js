@@ -67,6 +67,7 @@ export class Avatar {
     this.mountKind = null;
     this.vyaw = 0;
     this.targetVyaw = 0;
+    this.swingT = 0;
 
     const body = new THREE.MeshLambertMaterial({ color: info.color });
     const dark = new THREE.MeshLambertMaterial({ color: 0x24272c });
@@ -185,6 +186,9 @@ export class Avatar {
     this.targetVyaw = vyaw;
   }
 
+  // Kılıç savurma animasyonu
+  swing() { this.swingT = 0.3; }
+
   // Jetpack alev uçlarının dünya konumları (parçacıklar için)
   jetNozzles(a, b) {
     this.root.updateMatrixWorld(true);
@@ -298,6 +302,12 @@ export class Avatar {
       this.legL.rotation.set(swing, 0, 0);
       this.legR.rotation.set(onGround ? -swing : -amp * 0.4, 0, 0);
     }
+    // Kılıç savurma: kollar yukarıdan aşağı iner
+    if (this.swingT > 0) {
+      this.swingT = Math.max(0, this.swingT - dt);
+      const k = 1 - this.swingT / 0.3;
+      this.arms.rotation.set(0.9 - Math.sin(k * Math.PI) * 2.0, Math.sin(k * Math.PI) * 0.5, 0);
+    } else this.arms.rotation.set(0, 0, 0);
     // Jetpack: bit 4 = takılı, bit 8 = itiş
     this.jet.visible = (this.flags & 4) !== 0;
     const thrust = (this.flags & 8) !== 0;
