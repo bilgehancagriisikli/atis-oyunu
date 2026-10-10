@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Atış Arenası</title>
+  <meta name="description" content="Tarayıcıda oynanan 3D çok oyunculu atış oyunu">
+  <meta name="theme-color" content="#0b0f16">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='22' fill='none' stroke='%23ff5b3a' stroke-width='6'/%3E%3Cpath d='M32 2v20M32 42v20M2 32h20M42 32h20' stroke='%23ff5b3a' stroke-width='6'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="vendor/peerjs.min.js"></script>
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <!-- GİRİŞ -->
+  <div id="login" class="screen">
+    <div class="panel">
+      <h1>ATIŞ <span>ARENASI</span></h1>
+      <p class="sub">3D çok oyunculu atış · Bazuka, lazer, kara delik ve daha fazlası</p>
+      <form id="login-form" autocomplete="off">
+        <label class="field">Erişim Kodu
+          <input id="code" type="password" required spellcheck="false" placeholder="Kodu gir">
+        </label>
+        <label class="field">Kullanıcı Adı
+          <input id="name" type="text" maxlength="16" spellcheck="false" placeholder="Oyundaki ismin">
+        </label>
+        <div id="role-hint"></div>
+        <button id="login-btn" type="submit">OYUNA KATIL</button>
+        <div id="login-error" class="error" role="alert"></div>
+      </form>
+      <div id="mobile-note" class="note hidden">📱 Telefonda oynamak için telefona <b>mouse ve klavye</b> bağla (USB-OTG veya Bluetooth), sonra yatay çevir.</div>
+      <details>
+        <summary>🎮 Kontroller</summary>
+        <div class="controls">
+          <div><kbd>W A S D</kbd> Hareket</div>
+          <div><kbd>Fare</kbd> Nişan al</div>
+          <div><kbd>Sol tık</kbd> Ateş et</div>
+          <div><kbd>Boşluk</kbd> Zıpla</div>
+          <div><kbd>Shift</kbd> Koş</div>
+          <div><kbd>1-0</kbd> / <kbd>Tekerlek</kbd> Silah seç</div>
+          <div><kbd>Q</kbd> Önceki silah</div>
+          <div><kbd>Tab</kbd> Skor tablosu</div>
+          <div><kbd>M</kbd> Büyük harita</div>
+          <div><kbd>T</kbd> / <kbd>Enter</kbd> Sohbet</div>
+          <div><kbd>Esc</kbd> Menü</div>
+        </div>
+        <p class="small">Silahlar haritaya paraşütle düşen <b style="color:#ffb627">turuncu kutulardan</b> çıkar. <b style="color:#30e060">Yeşil kutular</b> can verir.</p>
+      </details>
+      <details>
+        <summary>⚙️ Ayarlar</summary>
+        <div id="login-settings" class="settings"></div>
+      </details>
+    </div>
+  </div>
+
+  <!-- BAĞLANIYOR -->
+  <div id="connecting" class="screen hidden">
+    <div class="panel center">
+      <div class="spinner"></div>
+      <p id="connecting-text">Bağlanılıyor...</p>
+      <button id="cancel-connect" class="secondary">İptal</button>
+    </div>
+  </div>
+
+  <!-- OYUN -->
+  <div id="game-root" class="hidden">
+    <div id="hud" class="hidden">
+      <div id="vignette"></div>
+      <div id="frost"></div>
+      <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+      <div id="hitmarker"></div>
+      <div id="dmg-dir"></div>
+      <div id="center-msg"></div>
+      <div id="prot" class="hidden">🛡️ DOĞMA KORUMASI</div>
+
+      <div id="top-left">
+        <canvas id="minimap" width="170" height="170"></canvas>
+        <div id="net-info"></div>
+      </div>
+      <div id="killfeed"></div>
+
+      <div id="bottom-left">
+        <div id="chat-log"></div>
+        <div id="chat-input-wrap" class="hidden"><input id="chat-input" maxlength="120" placeholder="Mesaj yaz, Enter ile gönder"></div>
+        <div id="hp">
+          <span class="hp-icon">✚</span>
+          <div class="bar"><div id="hp-fill"></div></div>
+          <b id="hp-text">100</b>
+        </div>
+      </div>
+
+      <div id="weapon-slots"></div>
+      <div id="weapon">
+        <div id="weapon-name">Tabanca</div>
+        <div id="weapon-ammo">∞</div>
+      </div>
+
+      <div id="scoreboard" class="hidden">
+        <h2>SKOR TABLOSU</h2>
+        <table>
+          <thead><tr><th>Oyuncu</th><th>Öldürme</th><th>Ölüm</th><th>Ping</th></tr></thead>
+          <tbody id="score-body"></tbody>
+        </table>
+      </div>
+
+      <div id="bigmap" class="hidden">
+        <canvas id="bigmap-canvas" width="512" height="512"></canvas>
+        <p>Turuncu: silah kutusu · Yeşil: can kutusu · Mor: kara delik</p>
+      </div>
+
+      <div id="death" class="hidden">
+        <h2>ÖLDÜN</h2>
+        <p id="death-text"></p>
+        <p id="death-timer"></p>
+      </div>
+    </div>
+
+    <div id="pause" class="overlay hidden">
+      <div class="panel">
+        <h2 id="pause-title">OYNAMAK İÇİN TIKLA</h2>
+        <p id="pause-hint" class="error"></p>
+        <button id="resume-btn">▶ OYNA</button>
+        <div class="row-btns">
+          <button id="fullscreen-btn" class="secondary">⛶ Tam ekran</button>
+          <button id="leave-btn" class="danger">Oyundan çık</button>
+        </div>
+        <div id="admin-panel" class="hidden">
+          <h3>👑 Admin Paneli</h3>
+          <div id="admin-players"></div>
+          <div class="row-btns">
+            <button id="reset-btn" class="secondary">Skorları sıfırla</button>
+            <button id="crates-btn" class="secondary">Kutu yağdır</button>
+          </div>
+        </div>
+        <details>
+          <summary>⚙️ Ayarlar</summary>
+          <div id="pause-settings" class="settings"></div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <noscript>Bu oyun için JavaScript gereklidir.</noscript>
+</body>
+</html>

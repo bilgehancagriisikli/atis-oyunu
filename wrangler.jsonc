@@ -1,0 +1,9 @@
+// İsteğe bağlı: "npx wrangler deploy" ile Cloudflare Workers (statik dosya) olarak yayınlamak için.
+// Cloudflare Pages kullanıyorsan bu dosyaya gerek yok; çıktı klasörü olarak "public" seç.
+{
+  "name": "atis-oyunu",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./public"
+  }
+}
