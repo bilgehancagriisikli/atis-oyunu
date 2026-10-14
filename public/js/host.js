@@ -5,6 +5,8 @@ import { hashAccessCode } from './sha256.js';
 import { WEAPONS, randomCrateWeapon, STARTER } from './weapons.js';
 import { VEH } from './vehicles.js';
 import { POLY_COUNT } from './polyhedra.js';
+import { HostEntities } from './host-entities.js';
+import { HALF } from './map.js';
 
 export const PLAYER_COLORS = [
   0xe74c3c, 0x3498db, 0x2ecc71, 0xf1c40f, 0x9b59b6, 0x1abc9c,
@@ -16,8 +18,8 @@ const RESPAWN_TIME = 3;
 const SPAWN_PROTECT = 2;
 const VEHICLE_RESET = 90; // terk edilen araç bu kadar saniye sonra park yerine döner
 const VEHICLE_RESPAWN = 20; // patlayan araç bu kadar saniye sonra park yerinde yeniden çıkar
-// Gökten düşen cisim
-export const METEOR = { fall: 3.2, height: 55, radius: 7, dmg: 75, kb: 16, every: [18, 32] };
+// Gökten düşen cisim (sıklık eskisinin 2,5 katı: 18-32 sn yerine 7,2-12,8 sn)
+export const METEOR = { fall: 3.2, height: 55, radius: 7, dmg: 75, kb: 16, every: [18 / 2.5, 32 / 2.5] };
 
 const r2 = (v) => Math.round(v * 100) / 100;
 
@@ -46,7 +48,8 @@ export class HostLogic {
     }));
     this.meteors = [];
     this.nextMeteor = 1;
-    this.meteorTimer = 20;
+    this.meteorTimer = 8;
+    this.initEntities();
   }
 
   // --------------------------------------------------------
@@ -151,8 +154,8 @@ export class HostLogic {
 
   // Gökten rastgele bir cisim düşer (önce yere uyarı halkası çıkar)
   spawnMeteor(atX, atZ) {
-    const x = r2(atX ?? (Math.random() * 2 - 1) * 54);
-    const z = r2(atZ ?? (Math.random() * 2 - 1) * 54);
+    const x = r2(atX ?? (Math.random() * 2 - 1) * (HALF - 6));
+    const z = r2(atZ ?? (Math.random() * 2 - 1) * (HALF - 6));
     const y = r2(this.world.groundAt(x, z, 60));
     const m = { id: this.nextMeteor++, s: Math.floor(Math.random() * POLY_COUNT), x, y, z, born: this.time };
     this.meteors.push(m);
@@ -172,6 +175,7 @@ export class HostLogic {
         { kb: [r2(cx * inv * METEOR.kb * f), r2(METEOR.kb * 0.6 * f + 3), r2(cz * inv * METEOR.kb * f)] });
     }
     this.splashVehicles(m.x, m.y + 0.5, m.z, METEOR.radius, METEOR.dmg * 1.2, null, w);
+    this.splashEntities(m.x, m.y + 0.5, m.z, METEOR.radius, METEOR.dmg * 1.2, null, w);
   }
 
   vehicle(id) {
@@ -221,6 +225,7 @@ export class HostLogic {
       holes: this.holes.map((h) => ({ id: h.id, k: h.k, p: [h.x, h.y, h.z], by: h.by, dur: h.dur - (this.time - h.born) })),
       vehicles: this.vehicles.map((v) => this.vehInfo(v)),
       meteors: this.meteors.map((m) => ({ id: m.id, s: m.s, p: [m.x, m.y, m.z], dur: METEOR.fall, age: r2(this.time - m.born) })),
+      ...this.entitiesWelcome(),
       cubes: [...this.players.values()].flatMap((q) => [...q.proj]
         .filter(([, r]) => r.w === 'rubik' && r.o && this.time - r.t < WEAPONS.rubik.life)
         .map(([pid, r]) => ({ id: pid, by: q.id, o: r.o, v: r.v, age: r2(this.time - r.t) }))),
@@ -289,6 +294,7 @@ export class HostLogic {
     const p = this.players.get(id);
     if (!p) return;
     this.releaseVehicle(p);
+    this.removePlayerEntities(id);
     this.players.delete(id);
     this.conns.delete(id);
     this.broadcast({ t: 'leave', id });
@@ -333,8 +339,8 @@ export class HostLogic {
   spawnCrate(landed = false) {
     let x = 0, z = 0, y = 0;
     for (let tries = 0; tries < 30; tries++) {
-      x = r2((Math.random() * 2 - 1) * 55);
-      z = r2((Math.random() * 2 - 1) * 55);
+      x = r2((Math.random() * 2 - 1) * (HALF - 5));
+      z = r2((Math.random() * 2 - 1) * (HALF - 5));
       y = this.world.groundAt(x, z, 60);
       // Kutu tamamen düz bir yüzeye otursun (direk tepesi, rampa, kenar olmasın)
       let ok = [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]
@@ -370,6 +376,7 @@ export class HostLogic {
     tg.hp = Math.max(0, tg.hp - amount);
     const m = { t: 'dmg', tg: tg.id, a: a ? a.id : -1, hp: tg.hp, w, n: amount };
     if (extra.kb) m.kb = extra.kb;
+    if (extra.from) m.f = extra.from.map(r2); // hasar yönü göstergesi için kaynak (taret, yaratık, patlama)
     if (extra.fz) m.fz = extra.fz;
     if (extra.hs) m.hs = 1;
     this.broadcast(m);
@@ -412,6 +419,13 @@ export class HostLogic {
         if (![x, y, z].every(Number.isFinite)) return;
         // Binmeden önce gönderilmiş (araç bilgisi olmayan) eski konumlar oyuncuyu eyerden indirmesin
         const stale = p.veh && !(Array.isArray(msg.v) && msg.v[0] === p.veh);
+        // Yatay hız tahmini (mantar taretinin önden nişan alması için)
+        const nowS = performance.now() / 1000, dts = nowS - (p.stT || 0);
+        if (dts > 0.01 && dts < 0.5 && !stale) {
+          p.vxe = (p.vxe || 0) * 0.6 + Math.max(-30, Math.min(30, (x - p.x) / dts)) * 0.4;
+          p.vze = (p.vze || 0) * 0.6 + Math.max(-30, Math.min(30, (z - p.z) / dts)) * 0.4;
+        } else { p.vxe = 0; p.vze = 0; }
+        p.stT = nowS;
         if (!stale) { p.x = x; p.y = y; p.z = z; }
         if (Array.isArray(msg.r)) { p.yaw = +msg.r[0] || 0; p.pitch = +msg.r[1] || 0; }
         if (WEAPONS[msg.w] && p.inv.has(msg.w)) p.w = msg.w;
@@ -538,6 +552,7 @@ export class HostLogic {
           this.damage(tg, p, dmg, pr.w, { kb });
         }
         this.splashVehicles(bx, by, bz, W.radius, W.dmg, p, pr.w);
+        this.splashEntities(bx, by, bz, W.radius, W.dmg, p, pr.w);
         break;
       }
       case 'bh': {
@@ -569,7 +584,7 @@ export class HostLogic {
         const W = WEAPONS.teleport;
         if (!p.alive || !p.inv.has('teleport') || !Array.isArray(msg.to)) return;
         const [x, y, z] = msg.to.map(Number);
-        if (![x, y, z].every(Number.isFinite) || Math.abs(x) > 60 || Math.abs(z) > 60 || y < -5 || y > 80) return;
+        if (![x, y, z].every(Number.isFinite) || Math.abs(x) > HALF || Math.abs(z) > HALF || y < -5 || y > 80) return;
         if (Math.hypot(x - p.x, y - p.y, z - p.z) > W.range + 12) return;
         if (!this.rateOk(p, 'tp', 0.6 / W.rate)) return;
         this.releaseVehicle(p);
@@ -673,7 +688,10 @@ export class HostLogic {
           for (const v of this.vehicles) { if (v.dead) this.reviveVehicle(v); else this.resetVehicle(v); }
         }
         if (msg.a === 'meteor') this.spawnMeteor();
+        if (msg.a === 'creatures') this.spawnCreatures();
         break;
+      default:
+        this.receiveEntity(id, p, msg);
     }
   }
 
@@ -723,6 +741,7 @@ export class HostLogic {
         }
         if (ended) {
           this.splashVehicles(h.x, h.y, h.z, B.finalR, B.finalDmg, owner, w);
+          this.splashEntities(h.x, h.y, h.z, B.finalR, B.finalDmg, owner, w);
           this.holes.splice(i, 1);
         }
       }
@@ -749,6 +768,9 @@ export class HostLogic {
       }
     }
 
+    // Taretler, yaratıklar, mayınlar
+    this.tickEntities(dt);
+
     // Anlık görüntü (20 Hz)
     this.snapTimer -= dt;
     if (this.snapTimer <= 0) {
@@ -761,7 +783,9 @@ export class HostLogic {
         if (v) e.push(v.id, r2(v.yaw));
         list.push(e);
       }
-      this.broadcast({ t: 'snap', p: list });
+      const snap = { t: 'snap', p: list };
+      this.entitiesSnap(snap);
+      this.broadcast(snap);
     }
 
     // Skor + ping; 30 sn ses vermeyen oyuncu düşürülür (sekmesi kapanmış ama bağlantısı kopmamış)
@@ -786,3 +810,6 @@ export class HostLogic {
     }
   }
 }
+
+// Taretler, yaratıklar, mayınlar, yakalama silahı, kedi tablosu (host-entities.js)
+Object.assign(HostLogic.prototype, HostEntities);

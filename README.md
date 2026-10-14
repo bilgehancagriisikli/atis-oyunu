@@ -6,9 +6,14 @@ kodu ve kendi isimleriyle doğrudan katılır.
 
 ## Özellikler
 
-- **3D harita "Liman Üssü"**: 4 bina (içine girilebilir, çatılara rampa/merdivenle çıkılır),
+- **3D harita "Liman Üssü"** (147 × 147 m): 4 bina (içine girilebilir, çatılara rampa/merdivenle çıkılır),
   binaları birbirine bağlayan köprü, merkezde rampalı platform, konteyner yığınları, sandıklar,
-  bariyerler, ağaçlar.
+  bariyerler, ağaçlar. Dış halkada köşe gözetleme kuleleri ve yeni siperler var.
+  - Kuzeybatı binasının içinde, güney kapısının tam karşısında bir **kedi tablosu** asılı.
+    Ona ateş edersen verdiğin hasar **sana geri döner** (tabanca, pompalı, lazer, kılıç, fraktal,
+    testere, roket, bomba...).
+  - Kuzey duvarının ortasında, duvarın üstünde **uyuyan beyaz bir Ankara kedisi** var (pembe burun,
+    pembe kulak içi ve pati yastıkları). Yanına gidersen mırladığını duyarsın.
 - **Paraşütle rastgele düşen Lego tuğlaları** (2x2, üstü çıkıntılı): turuncu tuğladan rastgele silah,
   yeşil tuğladan +50 can, mavi tuğladan **jetpack** çıkar.
 - **Jetpack**: havadayken `Boşluk` tuşunu basılı tut, yukarı uçarsın. Yakıt yerde kendiliğinden dolar;
@@ -26,8 +31,8 @@ kodu ve kendi isimleriyle doğrudan katılır.
     Araca isabet aracın canından düşer; binicinin kendisi de ayrıca vurulabilir. Canı biten araç
     parçalanır, binici savrulur ve hasar alır; araç 20 sn sonra park yerinde yeniden çıkar.
     Terk edilen araç 90 sn sonra park yerine döner.
-- **17 silah** (herkes tabanca ve elmas kılıçla doğar, diğerleri tuğlalardan gelir). Silahlar 1–9 tuşlarına
-  gruplanmıştır; aynı tuşa tekrar basınca gruptaki sonraki silaha geçilir:
+- **18 silah ve 2 taret** (herkes tabanca ve elmas kılıçla doğar, diğerleri tuğlalardan gelir). Silahlar 0–9
+  tuşlarına gruplanmıştır; aynı tuşa tekrar basınca gruptaki sonraki silaha geçilir:
 
   | Tuş | Silah | Özelliği |
   |---|---|---|
@@ -46,22 +51,33 @@ kodu ve kendi isimleriyle doğrudan katılır.
   | 6 | **Kara Delik Topu** | Çarptığı yerde herkesi içine çeken kara delik açar |
   | 6 | **Beyaz Delik Topu** | Kara deliğin tersi: herkesi dışarı fırlatır, sonunda patlar |
   | 7 | **Işınlanma Silahı** | Nişangahın gösterdiği yere ışınlar (yerde mavi hedef halkası görünür). Birinin üstüne ışınlanırsan onu ezersin |
+  | 7 | **Yakalama Silahı** | Kancalı ip atar; kanca bir rakibe takılırsa onu (aracından söküp) hızla kendine çeker. Anomalocaris'leri de çeker |
   | 8 | **Zeka Küpü Bombası** | 3x3x3 zeka küpü şeklinde el bombası. Sol tıkla atılır, seker ve yerde bekler; **sağ tıkla** atılmış tüm küpler patlar |
   | 9 | **Fraktal Silahı** | Tek çizgi ateşler; çizgi ilerledikçe ikiye, dörde, sekize... dallanır (fraktal ağaç). Duvara çarpan dal biter, her değen dal hasar verir |
+  | 0 | **Mantar Taret** | Kırmızı şapkalı, beyaz benekli mantar. Sol tıkla turuncu halkanın olduğu yere kurulur; menzildeki (7–48 m) rakiplere **havan topu gibi** kavisli, patlayan mermi atar. Görüş hattı gerekmez, siperin arkasına da düşer |
+  | 0 | **Tullimonstrum Taret** | Tully canavarı biçiminde (göz çubuğu, ucunda dişli kıskaç olan hortum). Gördüğü rakiplere hortumundan **tabanca kadar hasar** veren (18, kafaya 36) atışlar yapar |
+
+  Taretler sahibine ateş etmez ve sahibinin hasarından etkilenmez; diğer oyuncular vurarak yok edebilir.
+  90 saniye sonra kendiliğinden söner. Bir oyuncunun en fazla 2 tareti olur (üçüncüsü kurulunca en eskisi söner).
+- **Anomalocaris**: arada bir haritanın bir yerinde 2–3 kişilik uçan Anomalocaris sürüsü belirir. Yan
+  yüzgeçlerini dalga gibi çırparak uçar, en yakın oyuncuyu kovalar ve yalnızca **yakından ısırır** (koşarak
+  kaçabilirsin; binalara genelde giremezler). Vurarak, patlamayla ya da taretle avlanabilirler.
+- **Deniz kabuğu mayınları**: haritanın rastgele yerlerinde yere yarı gömülü tarak kabuğu fosilleri çıkar.
+  Üstüne basan (yaya ya da araçla) patlatır.
 
 - **Clypeaster fosilleri**: haritanın bazı yerlerinde yerde duran deniz kestanesi fosilleri trambolin gibi
-  zıplatır (yaya da araçla da). Yüksekten düşersen daha yükseğe sekersin.
-- **Gökten düşen cisimler**: arada bir, rastgele bir yere 5 Platon cismi, 13 Arşimet cismi (+2 ayna
+  zıplatır (yaya da araçla da), yaklaşık 15 m yükseğe. Yüksekten düşersen daha yükseğe sekersin.
+- **Gökten düşen cisimler**: 7–13 saniyede bir, rastgele bir yere 5 Platon cismi, 13 Arşimet cismi (+2 ayna
   ikizi: sol/sağ kalkık küp ve kalkık onikiyüzlü) ve 4 Kepler-Poinsot cisminden biri düşer. Önce yerde
   kırmızı uyarı halkası çıkar, cismin adı üstünde yazar; çarpınca patlar, halkanın içindekilere ve
   araçlara hasar verir.
 
 - **Mini harita** (sol üstte, dönen) ve **büyük harita** (`M`): kutular, araçlar, kara/beyaz delikler ve
-  ateş eden düşmanlar ve gökten cisim düşecek yerler görünür.
+  ateş eden düşmanlar, gökten cisim düşecek yerler, taretler ve Anomalocaris'ler görünür.
 - Skor tablosu, öldürme akışı, sohbet, vuruş işaretleri, hasar yönü göstergesi, doğma koruması.
 - Kodla üretilen sesler ve dokular: dışarıdan resim/ses dosyası yok.
 - **Admin paneli** (Esc menüsünde): oyuncu atma, skorları sıfırlama, kutu yağdırma, araçları park yerine gönderme,
-  gökten cisim düşürme.
+  gökten cisim düşürme, Anomalocaris çağırma.
 
 ## Erişim kodları
 
@@ -120,7 +136,7 @@ npx wrangler deploy        # wrangler.jsonc, public/ klasörünü yayınlar
 | Sağ tık | Atılmış zeka küplerini patlat |
 | `Boşluk` | Zıpla |
 | `Shift` | Koş (motosiklette nitro) |
-| `1`–`9`, tekerlek | Silah seç (aynı tuş: gruptaki sonraki silah) |
+| `0`–`9`, tekerlek | Silah seç (aynı tuş: gruptaki sonraki silah) |
 | `Q` | Önceki silah |
 | `E` | Araca bin / in |
 | `V` | Birinci / üçüncü şahıs kamera |
@@ -171,6 +187,12 @@ public/
   js/main.js          giriş akışı, menüler, admin paneli
   js/net.js           PeerJS bağlantıları
   js/host.js          admin (sunucu) oyun mantığı
+  js/host-entities.js sunucu: taretler, Anomalocaris, mayınlar, yakalama silahı, kedi tablosu
+  js/entities.js      istemci: aynı nesnelerin görüntüsü ve isabetleri
+  js/npc.js           taret / yaratık / mayın / trambolin ayarları
+  js/turrets.js       mantar ve Tullimonstrum taret modelleri
+  js/creatures.js     Anomalocaris modeli
+  js/decor.js         kedi tablosu, uyuyan kedi, deniz kabuğu fosili
   js/game.js          oyun döngüsü, oyuncu, silahlar, araç sürüşü, jetpack
   js/vehicles.js      motosiklet, dev çinçilla, Türk avurtlağı: modeller ve sürüş fiziği
   js/polyhedra.js     Platon, Arşimet ve Kepler-Poinsot cisimlerinin geometrisi
@@ -182,6 +204,7 @@ public/
   js/hud.js           ekran arayüzü
   js/audio.js         kodla üretilen sesler
   js/input.js         klavye / fare
+  img/kedi.webp       tablodaki kedi fotoğrafı
   vendor/             three.js ve peerjs (MIT lisanslı)
 araclar/kod-olusturucu.html   erişim kodu özeti üretici
 ```

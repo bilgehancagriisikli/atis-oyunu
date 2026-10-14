@@ -1,8 +1,9 @@
 // Silah tanımları ve 3D modelleri.
 import * as THREE from 'three';
+import { turretItemModel } from './turrets.js';
 
-// type: hitscan | projectile | beam | rail | chain | teleport | melee | fractal
-// slot: 1-9 tuşları; aynı tuşa tekrar basınca gruptaki sonraki silaha geçilir
+// type: hitscan | projectile | beam | rail | chain | teleport | melee | fractal | grapple | deploy
+// slot: 0-9 tuşları; aynı tuşa tekrar basınca gruptaki sonraki silaha geçilir
 export const WEAPONS = {
   pistol: {
     name: 'Tabanca', slot: 1, type: 'hitscan', dmg: 18, hs: 2, rate: 4, spread: 0.01, range: 160,
@@ -83,10 +84,27 @@ export const WEAPONS = {
     name: 'Işınlanma Silahı', slot: 7, type: 'teleport', range: 120, ammo: 8, rate: 1.1,
     color: 0x3ff0ff, sound: 'tp', recoil: 0.08, weight: 8, telefrag: 200,
   },
+  // Kancalı yakalama silahı: kanca bir rakibe takılırsa onu hızla kendine çeker
+  grapple: {
+    name: 'Yakalama Silahı', slot: 7, type: 'grapple', dmg: 8, range: 32, rate: 0.9, ammo: 8,
+    color: 0xc9a46a, sound: 'grapple', recoil: 0.06, weight: 8, pull: { speed: 24, dur: 1.4 },
+  },
+  // Kurulabilen taretler: sol tıkla nişangahın gösterdiği yere (en fazla range metre) kurulur
+  mush: {
+    name: 'Mantar Taret', slot: 0, type: 'deploy', turret: 'mush', ammo: 1, rate: 1, range: 6,
+    color: 0xe8443a, sound: 'deploy', recoil: 0, weight: 6,
+  },
+  tully: {
+    name: 'Tullimonstrum Taret', slot: 0, type: 'deploy', turret: 'tully', ammo: 1, rate: 1, range: 6,
+    color: 0xb59be0, sound: 'deploy', recoil: 0, weight: 7,
+  },
 };
 
 // Silah olmayan öldürme sebepleri (öldürme akışında görünen isimler)
-export const KILL_NAMES = { moto: 'Motosiklet', chin: 'Dev Çinçilla', ham: 'Türk Avurtlağı', vboom: 'Araç Patlaması' };
+export const KILL_NAMES = {
+  moto: 'Motosiklet', chin: 'Dev Çinçilla', ham: 'Türk Avurtlağı', vboom: 'Araç Patlaması',
+  anomalo: 'Anomalocaris', shellmine: 'Deniz Kabuğu Mayını', mirror: 'Kedi Tablosu',
+};
 let polyNames = [];
 export function setPolyNames(names) { polyNames = names; }
 export function killName(w) {
@@ -98,7 +116,7 @@ export function killName(w) {
 // Liste / tekerlek sırası (tuş gruplarına göre)
 export const WEAPON_ORDER = [
   'pistol', 'sword', 'shotgun', 'minigun', 'bazooka', 'grenade', 'zigzag', 'laser', 'freeze', 'railgun',
-  'tesla', 'saw', 'blackhole', 'whitehole', 'teleport', 'rubik', 'fractal',
+  'tesla', 'saw', 'blackhole', 'whitehole', 'teleport', 'grapple', 'rubik', 'fractal', 'mush', 'tully',
 ];
 
 // Her doğuşta verilen, hiç bitmeyen silahlar
@@ -446,6 +464,35 @@ export function buildWeaponModel(id) {
       seg(-0.04, 0.03, -0.13, -0.07, 0.03, -0.16); seg(-0.04, 0.03, -0.13, -0.03, 0.07, -0.16);
       g.add(tip);
       muzzle.position.set(0, 0.01, -0.34);
+      break;
+    }
+    case 'grapple': {
+      const B2 = lam(0x4a3b2a);
+      add(g, box(0.09, 0.1, 0.3), B2, 0, 0, 0.06);
+      add(g, box(0.05, 0.13, 0.07), BLACK, 0, -0.1, 0.1, 0.25);
+      add(g, cylZ(0.034, 0.034, 0.2, 10), METAL, 0, 0.01, -0.16);
+      // Yanda sarılı ip
+      add(g, torusZ(0.05, 0.02), lam(0xc9a46a), 0.07, 0, 0.03, 0, Math.PI / 2, 0);
+      add(g, cylZ(0.04, 0.04, 0.05, 10), lam(0xa8844f), 0.07, 0, 0.03, 0, Math.PI / 2, 0);
+      // Üç çatallı kanca
+      const hook = new THREE.Group();
+      hook.position.set(0, 0.01, -0.28);
+      g.add(hook);
+      add(hook, box(0.03, 0.03, 0.06), METAL, 0, 0, 0);
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 + Math.PI / 2;
+        add(hook, box(0.012, 0.012, 0.07), lam(0xb8c0c8), Math.cos(a) * 0.028, Math.sin(a) * 0.028, -0.045, -Math.sin(a) * 0.7, Math.cos(a) * 0.7, 0);
+      }
+      muzzle.position.set(0, 0.01, -0.34);
+      break;
+    }
+    case 'mush':
+    case 'tully': {
+      const m = turretItemModel(id);
+      m.position.set(0, -0.08, -0.22);
+      m.rotation.y = id === 'tully' ? 0 : 0.4;
+      g.add(m);
+      muzzle.position.set(0, 0.12, -0.3);
       break;
     }
     case 'teleport': {

@@ -281,6 +281,10 @@ $('meteor-btn').addEventListener('click', (e) => {
   e.stopPropagation();
   host && host.receive(0, { t: 'admin', a: 'meteor' });
 });
+$('creature-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  host && host.receive(0, { t: 'admin', a: 'creatures' });
+});
 
 function refreshAdmin() {
   if (!host) return;

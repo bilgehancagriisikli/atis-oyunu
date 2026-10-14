@@ -2,8 +2,11 @@
 import * as THREE from 'three';
 import { World, PLAYER } from './physics.js';
 import { makeTextures } from './textures.js';
+import { buildPainting, buildSleepingCat, zTexture } from './decor.js';
 
-export const HALF = 60; // oynanabilir alan yarı genişliği
+// Oynanabilir alan yarı genişliği. Alan eskisinin (60) 1,5 katı: 60·√1,5 ≈ 73,5.
+// Eski yapılar ±60 içinde kaldı; aradaki dış halkaya yeni siperler eklendi.
+export const HALF = 73.5;
 
 const MATS = {
   ground: { tex: 'concrete', color: 0xffffff, s: 8 },
@@ -369,6 +372,37 @@ export function buildMap(scene, quality = 'high') {
   bar(32, -16, true); bar(-32, 16, true); bar(-32, -16, true); bar(32, 16, true);
   bar(48, 24, false); bar(-48, -24, false); bar(48, -24, false); bar(-48, 24, false);
 
+  // ---------------- Dış halka (genişletilen alan) ----------------
+  // Köşe gözetleme kuleleri: yükseltilmiş beton sahanlık, içeri bakan rampa, dış kenarda korkuluk
+  const outpost = (sx, sz) => {
+    const x0 = Math.min(sx * 64, sx * 69), x1 = Math.max(sx * 64, sx * 69);
+    const z0 = Math.min(sz * 64, sz * 69), z1 = Math.max(sz * 64, sz * 69);
+    const OH = 2.4;
+    B.box(x0, 0, z0, x1, OH, z1, 'concrete');
+    B.box(x0 - 0.04, OH - 0.3, z0 - 0.04, x1 + 0.04, OH, z1 + 0.04, 'hazard', false);
+    // Rampa iç tarafa (merkeze doğru) iner
+    const rz0 = Math.min(sz * 64.6, sz * 68.4), rz1 = Math.max(sz * 64.6, sz * 68.4);
+    if (sx > 0) B.ramp(58, 0, rz0, 64, OH, rz1, 'x', 1, 'metal');
+    else B.ramp(-64, 0, rz0, -58, OH, rz1, 'x', -1, 'metal');
+    // Dış iki kenarda alçak korkuluk
+    const ox = sx > 0 ? [x1 - 0.4, x1] : [x0, x0 + 0.4];
+    const oz = sz > 0 ? [z1 - 0.4, z1] : [z0, z0 + 0.4];
+    B.box(ox[0], OH, z0, ox[1], OH + 1.1, z1, 'concrete');
+    B.box(x0, OH, oz[0], x1, OH + 1.1, oz[1], 'concrete');
+  };
+  outpost(1, 1); outpost(-1, 1); outpost(1, -1); outpost(-1, -1);
+  // Dış halkadaki konteyner yığınları
+  contX(-36, -70.6, 0, 'cGreen'); contX(-36, -70.6, CH, 'cRed'); contX(-28, -70.6, 0, 'cBlue');
+  contX(26, 68.1, 0, 'cOrange'); contX(26, 68.1, CH, 'cBlue'); contX(34, 68.1, 0, 'cRed');
+  contZ(68.1, -30, 0, 'cRed'); contZ(68.1, -30, CH, 'cGreen'); contZ(68.1, -22, 0, 'cOrange');
+  contZ(-70.6, 24, 0, 'cBlue'); contZ(-70.6, 24, CH, 'cOrange'); contZ(-70.6, 16, 0, 'cGreen');
+  contX(-52, 64.5, 0, 'cRed'); contZ(52, -70.5, 0, 'cGreen');
+  // Siperler ve sandıklar
+  bar(-15, -65, true); bar(15, 65, true); bar(65, -12, false); bar(-65, 12, false);
+  bar(40, -64, true); bar(-40, 64, true); bar(64, 40, false); bar(-64, -40, false);
+  crate(-64, -50, 2); crate(-62.8, -50); crate(64, 50, 2); crate(62.8, 50);
+  crate(-50, 67); crate(50, -66, 2); crate(66, 18, 2); crate(-66, -18);
+
   // Ağaçlar
   const tryTree = (x, z) => {
     if (world.overlapsPlayer(x, 0, z, 1.0)) return;
@@ -383,6 +417,11 @@ export function buildMap(scene, quality = 'high') {
     tryTree(v, -56); tryTree(v, 56);
     tryTree(-56, v); tryTree(56, v);
   }
+  // Yeni dış sınır boyunca ikinci sıra ağaç
+  for (const v of [-58, -44, -16, 16, 44, 58]) {
+    tryTree(v, -HALF + 3.5); tryTree(v, HALF - 3.5);
+    tryTree(-HALF + 3.5, v); tryTree(HALF - 3.5, v);
+  }
 
   // Dekor: dış tepeler ve kayalar
   for (let i = 0; i < 34; i++) {
@@ -394,7 +433,7 @@ export function buildMap(scene, quality = 'high') {
     B.push('hill', toIndexed(g));
   }
   for (let i = 0; i < 14; i++) {
-    const a = Math.random() * Math.PI * 2, r = 70 + Math.random() * 25;
+    const a = Math.random() * Math.PI * 2, r = HALF + 10 + Math.random() * 22;
     const g = new THREE.DodecahedronGeometry(2 + Math.random() * 3, 0);
     g.translate(Math.cos(a) * r, 0.5, Math.sin(a) * r);
     B.push('rock', toIndexed(g));
@@ -409,7 +448,7 @@ export function buildMap(scene, quality = 'high') {
   for (const rot of [0, Math.PI / 2]) {
     const g = new THREE.PlaneGeometry(6, 2 * HALF);
     const uv = g.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setY(i, uv.getY(i) * 20);
+    for (let i = 0; i < uv.count; i++) uv.setY(i, uv.getY(i) * (2 * HALF / 6)); // 6 m'de bir tekrar
     const m = new THREE.Mesh(g, roadMat);
     m.rotation.x = -Math.PI / 2;
     m.rotation.z = rot;
@@ -421,7 +460,8 @@ export function buildMap(scene, quality = 'high') {
   // Lamba direkleri (ışıklı)
   const bulbMat = new THREE.MeshBasicMaterial({ color: 0xfff1b0 });
   const poleMat = new THREE.MeshLambertMaterial({ color: 0x3a3f45 });
-  for (const [x, z] of [[4, 22], [-4, -22], [22, -4], [-22, 4], [4, -50], [-4, 50], [50, 4], [-50, -4]]) {
+  for (const [x, z] of [[4, 22], [-4, -22], [22, -4], [-22, 4], [4, -50], [-4, 50], [50, 4], [-50, -4],
+    [66, -20], [-66, 20], [20, 66], [-20, -66]]) {
     world.addBox(x - 0.15, 0, z - 0.15, x + 0.15, 5.5, z + 0.15);
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 5.5, 6), poleMat);
     pole.position.set(x, 2.75, z);
@@ -447,6 +487,8 @@ export function buildMap(scene, quality = 'high') {
     [-32, -32], [32, -32], [-32, 32], [32, 32],
     [18, 24], [-18, -24], [24, -18], [-24, 18],
     [-12, 0], [12, 0], [0, 19], [0, -25],
+    // Dış halka
+    [67, 6], [-67, -6], [6, 67], [-6, -67], [64, -56], [-64, 56], [56, 64], [-56, -64],
   ];
   const spawns = [];
   for (const [x, z] of cand) {
@@ -469,7 +511,7 @@ export function buildMap(scene, quality = 'high') {
   // Kubbe: halka geometrisinin içi yukarı itilir, düzlemsel UV üstten görünüşü korur
   const trampolines = [];
   const fossilMat = new THREE.MeshLambertMaterial({ map: tex.fossil });
-  for (const [x, z] of [[28, 8], [-28, -8], [-10, 29], [46, 30], [-46, -30], [4, -4], [-20, -50]]) {
+  for (const [x, z] of [[28, 8], [-28, -8], [-10, 29], [46, 30], [-46, -30], [4, -4], [-20, -50], [62, -42], [-62, 42]]) {
     const y = world.groundAt(x, z, 10);
     const R = 1.35;
     const g = new THREE.RingGeometry(0.001, R, 40, 10);
@@ -488,6 +530,37 @@ export function buildMap(scene, quality = 'high') {
     trampolines.push({ x, y, z, r: R });
   }
 
+  // ---------------- Kedi tablosu (KB binası, kuzey iç duvarı) ----------------
+  // Güney kapısından girince tam karşıda. Tabloya ateş edenin verdiği hasar kendisine döner.
+  const PW = 2.0, PH = PW * 977 / 900; // resmin kendi en-boy oranı
+  const wallZ = -38 + T; // KB binası kuzey duvarının iç yüzü
+  const pc = { x: -32, y: 1.3 + PH / 2, z: wallZ };
+  const pt = buildPainting('img/kedi.webp', PW, PH);
+  pt.group.position.set(pc.x, pc.y, pc.z);
+  scene.add(pt.group);
+  const painting = {
+    minX: pc.x - PW / 2 - 0.12, maxX: pc.x + PW / 2 + 0.12,
+    minY: pc.y - PH / 2 - 0.12, maxY: pc.y + PH / 2 + 0.12,
+    minZ: wallZ, maxZ: wallZ + 0.08,
+    center: [pc.x, pc.y, wallZ + 0.06],
+    flashT: 0,
+    flash() { this.flashT = 1; },
+  };
+
+  // ---------------- Kuzey duvarının ortasında uyuyan Ankara kedisi ----------------
+  const cat = buildSleepingCat();
+  cat.root.scale.setScalar(1.75);
+  cat.root.position.set(0, WH + 0.25, -HALF - 0.95); // patileri iç kenardan biraz sarkar
+  scene.add(cat.root);
+  const zMat = new THREE.SpriteMaterial({ map: zTexture(), transparent: true, depthWrite: false });
+  const zs = [0, 1, 2].map(() => {
+    const sp = new THREE.Sprite(zMat.clone());
+    sp.visible = false;
+    scene.add(sp);
+    return sp;
+  });
+  const catHead = new THREE.Vector3();
+
   return {
     world,
     tex,
@@ -495,9 +568,30 @@ export function buildMap(scene, quality = 'high') {
     spawns,
     vehicleSpawns,
     trampolines,
+    painting,
+    cat: { pos: cat.root.position.clone() },
     minimap: drawMinimap(world),
-    update(t) {
+    update(t, dt = 0.016) {
       beacon.material.color.setHSL(0.5 + Math.sin(t * 2) * 0.05, 1, 0.55 + Math.sin(t * 4) * 0.15);
+      // Kedi: yavaş nefes, arada kulak seğirmesi, kuyruk ucu kıpırdar
+      cat.body.scale.y = 1 + Math.sin(t * 1.4) * 0.04;
+      cat.body.scale.x = 1 + Math.sin(t * 1.4) * 0.015;
+      const tw = (t % 6.3) < 0.25 ? Math.sin((t % 6.3) / 0.25 * Math.PI) * 0.35 : 0;
+      cat.ears[0].rotation.z = 0.28 + tw;
+      cat.tail.rotation.y = Math.sin(t * 0.5) * 0.04;
+      cat.head.getWorldPosition(catHead);
+      zs.forEach((sp, i) => {
+        const k = ((t / 3 + i / 3) % 1);
+        sp.visible = true;
+        sp.position.set(catHead.x + 0.3 + k * 0.6, catHead.y + 0.3 + k * 1.6, catHead.z + 0.2);
+        sp.scale.setScalar(0.25 + k * 0.35);
+        sp.material.opacity = Math.sin(k * Math.PI);
+      });
+      // Tablo isabet parıltısı
+      if (painting.flashT > 0) {
+        painting.flashT = Math.max(0, painting.flashT - dt * 3);
+        pt.glow.material.opacity = painting.flashT * 0.55;
+      }
     },
   };
 }
@@ -514,10 +608,10 @@ function toIndexed(g) {
   return g;
 }
 
-// Mini harita: yukarıdan görünüm (256px = 128m)
-export const MINIMAP_RANGE = 64;
+// Mini harita: yukarıdan görünüm (320px = 154m)
+export const MINIMAP_RANGE = 77;
 function drawMinimap(world) {
-  const S = 256, c = document.createElement('canvas');
+  const S = 320, c = document.createElement('canvas');
   c.width = c.height = S;
   const x = c.getContext('2d');
   const k = S / (MINIMAP_RANGE * 2);

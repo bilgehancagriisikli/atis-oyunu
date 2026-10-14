@@ -9,6 +9,11 @@ import { CRATE_FALL_H, CRATE_FALL_SPEED, METEOR } from './host.js';
 import { VEH, VehicleView, stepMoto, stepAnimal } from './vehicles.js';
 import { SOLIDS, solidGeometry } from './polyhedra.js';
 import { LEGO_COLORS } from './textures.js';
+import { GameEntities } from './entities.js';
+import { TRAMPOLINE } from './npc.js';
+import { TurretView } from './turrets.js';
+import { CreatureView } from './creatures.js';
+import { buildShellMine } from './decor.js';
 
 setPolyNames(SOLIDS.map((q) => q.name));
 const starterInv = () => Object.fromEntries(STARTER.map((w) => [w, Infinity]));
@@ -151,6 +156,7 @@ export class Game {
     this.fx = new Effects(this.scene, q);
     this.crateTex = this.map.tex;
     this.marker = this.fx.makeMarker(0x3ff0ff);
+    this.initEntities();
 
     // Elde tutulan silah (ayrı sahnede çizilir, duvara girmez)
     this.vmScene = new THREE.Scene();
@@ -226,7 +232,7 @@ export class Game {
       const s = q === 'high' ? 2048 : 1024;
       sun.shadow.mapSize.set(s, s);
       const c = sun.shadow.camera;
-      c.left = -75; c.right = 75; c.top = 75; c.bottom = -75; c.near = 10; c.far = 200;
+      c.left = -82; c.right = 82; c.top = 82; c.bottom = -82; c.near = 10; c.far = 220;
       sun.shadow.bias = -0.0004;
       sun.shadow.normalBias = 0.04;
     }
@@ -245,6 +251,7 @@ export class Game {
     for (const v of welcome.vehicles || []) this.addVehicle(v);
     for (const m of welcome.meteors || []) this.addMeteor(m);
     for (const c of welcome.cubes || []) this.addRestingCube(c);
+    this.entitiesFromWelcome(welcome);
     const mine = this.players.get(this.myId);
     this.selfAv = new Avatar(this.scene, { id: this.myId, name: mine ? mine.name : '', color: mine ? mine.color : 0xffffff });
     this.selfAv.tag.visible = false;
@@ -265,10 +272,17 @@ export class Game {
   // İlk patlamada / silah değişiminde takılma olmasın diye tüm shader'ları baştan derle
   warmup() {
     try {
+      // Sonradan çıkacak modellerin (taret, yaratık, mayın) gölgelendiricileri de baştan derlensin
+      const temp = [new TurretView(this.scene, 'mush', 0xffffff), new TurretView(this.scene, 'tully', 0xffffff),
+        new CreatureView(this.scene, { x: 0, y: -50, z: 0 })];
+      const mine = buildShellMine();
+      this.scene.add(mine);
       const hidden = [];
       this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
       this.renderer.compile(this.scene, this.camera);
       hidden.forEach((o) => { o.visible = false; });
+      for (const v of temp) v.dispose();
+      this.scene.remove(mine);
       for (const w of WEAPON_ORDER) {
         this.setViewWeapon(w);
         this.renderer.compile(this.vmScene, this.vmCamera);
@@ -401,6 +415,7 @@ export class Game {
           if (WEAPONS[w]) p.avatar.setWeapon(w);
           p.avatar.setHp(hp);
         }
+        this.entitySnap(msg);
         break;
       case 'spawn': {
         const [x, y, z] = msg.p;
@@ -411,6 +426,7 @@ export class Game {
             protUntil: t + (msg.prot || 0), fireCd: 0.3, veh: null, jetpack: false, fuel: 0, jetting: false,
           });
           this.ride = null;
+          this.pull = null;
           this.stopJetSound();
           this.camY = y + PLAYER.eye;
           this.setViewWeapon('pistol');
@@ -442,8 +458,10 @@ export class Game {
           if (msg.n) {
             let ang = null;
             const att = this.players.get(msg.a);
-            if (att && att.avatar && msg.a !== this.myId) {
-              const dx = att.avatar.pos.x - me.x, dz = att.avatar.pos.z - me.z;
+            // Kaynak konumu verildiyse (taret, yaratık, patlama) ona göre, yoksa saldırana göre
+            const src = Array.isArray(msg.f) ? { x: msg.f[0], z: msg.f[1] } : att && att.avatar && msg.a !== this.myId ? att.avatar.pos : null;
+            if (src) {
+              const dx = src.x - me.x, dz = src.z - me.z;
               const fwd = -Math.sin(me.yaw) * dx - Math.cos(me.yaw) * dz;
               const right = Math.cos(me.yaw) * dx - Math.sin(me.yaw) * dz;
               ang = Math.atan2(right, fwd);
@@ -477,11 +495,13 @@ export class Game {
           me.veh = null;
           me.jetting = false;
           this.ride = null;
+          this.pull = null;
           this.stopJetSound();
           this.marker.hide();
           this.stopBeam();
           // Saldırgan yoksa (gökten düşen cisim, araç patlaması) silahın adı söylenir
-          const txt = msg.a === msg.tg ? 'Kendini vurdun!' : !killer ? `${wn} seni öldürdü` : `${killer.name} seni ${wn} ile öldürdü`;
+          const txt = msg.w === 'mirror' ? 'Kedi tablosu verdiğin hasarı sana geri yansıttı!'
+            : msg.a === msg.tg ? 'Kendini vurdun!' : !killer ? `${wn} seni öldürdü` : `${killer.name} seni ${wn} ile öldürdü`;
           this.hud.showDeath(txt);
           this.sfx.play('death');
         } else {
@@ -665,6 +685,8 @@ export class Game {
       case 'reset':
         for (const p of this.players.values()) { p.kills = 0; p.deaths = 0; }
         break;
+      default:
+        this.handleEntity(msg);
     }
   }
 
@@ -688,8 +710,9 @@ export class Game {
     this.updateProjectiles(dt, t);
     this.updateHoles(t);
     this.updateMeteors(dt, t);
+    this.updateEntities(dt, t);
     this.updateRemoteBeams(t);
-    this.map.update(t);
+    this.map.update(t, dt);
 
     // Durum gönder (20 Hz)
     this.sendTimer -= dt;
@@ -781,6 +804,8 @@ export class Game {
       } else if (!me.jetting && wasJetting) this.stopJetSound();
 
       this.applyHoles(me, 0.9, dt);
+      // Yakalama silahıyla çekiliyorsak hareket tuşları geçersiz
+      if (this.applyPull(dt, wish)) { me.jetting = false; body = PLAYER; }
 
       const fallV = me.vy;
       const wasGround = me.onGround;
@@ -904,7 +929,8 @@ export class Game {
       const dx = b.x - tr.x, dz = b.z - tr.z;
       const rr = tr.r + radius * 0.5;
       if (dx * dx + dz * dz > rr * rr || b.y < tr.y - 0.3 || b.y > tr.y + 0.75 || b.vy > 2) continue;
-      b.vy = Math.min(26, Math.max(17, -fallV * 0.85));
+      // Clypeaster eskisinin 2,5 katı yükseğe zıplatır; yüksekten düşen biraz daha yükseğe seker
+      b.vy = Math.min(TRAMPOLINE.maxVy, Math.max(TRAMPOLINE.vy, -fallV * TRAMPOLINE.keep));
       b.onGround = false;
       b.jumped = true;
       _a.set(tr.x, tr.y, tr.z);
@@ -1225,6 +1251,8 @@ export class Game {
         v.cx - H.hw, v.cy + H.y0, v.cz - H.hw, v.cx + H.hw, v.cy + H.y1, v.cz + H.hw);
       if (tb !== null) hits.push({ vid: v.id, t: tb, head: false });
     }
+    // Taretler, yaratıklar, kedi tablosu
+    this.traceEntities(o, d, maxT, hits);
     hits.sort((a, b) => a.t - b.t);
     const used = pierce ? hits : hits.slice(0, 1);
     const endT = !pierce && used.length ? used[0].t : maxT;
@@ -1237,6 +1265,7 @@ export class Game {
 
   // İsabeti sunucuya bildir: oyuncuya 'hit', araca 'vhit'
   sendHit(h, w, n = 1, head = false) {
+    if (this.sendEntityHit(h, w, n)) return;
     if (h.vid != null) this.send({ t: 'vhit', v: h.vid, w, n });
     else if (n > 1 || head) this.send({ t: 'hit', tg: h.id, w, n, hs: head ? 1 : 0 });
     else this.send({ t: 'hit', tg: h.id, w });
@@ -1273,6 +1302,14 @@ export class Game {
     if (W.type === 'teleport' && !this.fireTeleport(W, o, base)) { me.fireCd = 0.4; return; }
     me.fireCd = 1 / W.rate;
     if (W.type === 'melee') { this.swingSword(W, o, base); return; }
+    if (W.type === 'deploy') {
+      // Taret kur: yer uygun değilse eşya harcanmaz
+      if (!this.fireDeploy(W, w)) { me.fireCd = 0.4; return; }
+      this.sfx.play('deploy');
+      me.inv[w] -= 1;
+      if (me.inv[w] <= 0) this.dropWeapon(w);
+      return;
+    }
     const muzzle = this.muzzleWorld(_c.clone());
     this.recoil = Math.min(0.3, this.recoil + (W.recoil ?? 0.05));
     me.pitch = Math.min(1.55, me.pitch + (W.recoil ?? 0.05) * 0.12);
@@ -1290,11 +1327,11 @@ export class Game {
         this.fx.tracer(muzzle, r.end, W.color, W.pellets ? 0.012 : 0.02);
         if (r.hits.length) {
           const h = r.hits[0];
-          const key = h.vid != null ? 'v' + h.vid : 'p' + h.id;
+          const key = h.vid != null ? 'v' + h.vid : h.tid != null ? 't' + h.tid : h.cid != null ? 'c' + h.cid : h.mirror ? 'm' : 'p' + h.id;
           const a = per.get(key) || { h, n: 0, head: 0 };
           a.n++; if (h.head) a.head++;
           per.set(key, a);
-          if (h.vid != null) this.fx.impact(r.end, _a.set(0, 1, 0), W.color);
+          if (h.id == null) this.fx.impact(r.end, _a.set(0, 1, 0), W.color);
         } else if (r.wall) {
           this.fx.impact(r.end, _a.set(r.wall.nx, r.wall.ny, r.wall.nz), W.color);
         }
@@ -1331,6 +1368,8 @@ export class Game {
       this.fireTesla(W, o, base, muzzle);
     } else if (W.type === 'fractal') {
       this.fireFractal(W, w, o, base, muzzle);
+    } else if (W.type === 'grapple') {
+      this.fireGrapple(W, o, base, muzzle);
     }
 
     if (me.inv[w] !== Infinity) {
@@ -1367,6 +1406,7 @@ export class Game {
       const H = VEH[v.kind].hit;
       consider({ vid: v.id }, _a.set(v.cx, v.cy + (H.y0 + H.y1) / 2, v.cz), H.hw);
     }
+    for (const e of this.entityTargets()) consider(e.h, e.c, e.r);
     cands.sort((a, b) => a.dist - b.dist);
     for (const c of cands.slice(0, W.maxTargets)) {
       this.sendHit(c.h, 'sword');
@@ -1435,6 +1475,15 @@ export class Game {
         const e = per.get('v' + v.id) || { h: { vid: v.id }, n: 0, pos: a.clone().addScaledVector(d, tb) };
         e.n++;
         per.set('v' + v.id, e);
+      }
+      // Taretler, yaratıklar, kedi tablosu
+      const eh = [];
+      this.traceEntities(a, d, sg.len + T, eh);
+      for (const h of eh) {
+        const key = h.tid != null ? 't' + h.tid : h.cid != null ? 'c' + h.cid : 'm';
+        const e = per.get(key) || { h, n: 0, pos: a.clone().addScaledVector(d, h.t) };
+        e.n++;
+        per.set(key, e);
       }
     }
     for (const e of per.values()) {
@@ -1666,6 +1715,9 @@ export class Game {
     } else if (W.type === 'projectile' && msg.v) {
       const start = new THREE.Vector3().fromArray(msg.o);
       this.addProjectile({ id: msg.id, w: msg.w, local: false, owner: msg.by, pos: start, vel: new THREE.Vector3().fromArray(msg.v) });
+    } else if (W.type === 'grapple' && Array.isArray(msg.e)) {
+      const end = new THREE.Vector3().fromArray(msg.e);
+      if ([end.x, end.y, end.z].every(Number.isFinite)) this.shootRope((out) => (av.alive ? av.muzzleWorld(out) : null), end, msg.by);
     } else if (W.type === 'fractal' && Array.isArray(msg.o) && Array.isArray(msg.d)) {
       const o = new THREE.Vector3().fromArray(msg.o), d = new THREE.Vector3().fromArray(msg.d);
       if (![o.x, o.y, o.z, d.x, d.y, d.z].every(Number.isFinite) || d.lengthSq() < 0.5) return;
@@ -1815,6 +1867,24 @@ export class Game {
           break;
         }
       }
+      // Taretler, yaratıklar, kedi tablosu: testere keser (her birine bir kez), zikzak patlar ya da tablodan yansır
+      for (let k = 1; k <= n && !zigAt; k++) {
+        const f = (k / n) * pathLen;
+        const x = p.pos.x + seg.x * f, y = p.pos.y + seg.y * f, z = p.pos.z + seg.z * f;
+        const h = this.pointHitsEntity(x, y, z, p.kind === 'zig' ? 0.4 : 0.2);
+        if (!h) continue;
+        const key = h.tid != null ? 't' + h.tid : h.cid != null ? 'c' + h.cid : 'm';
+        if (p.kind === 'saw') {
+          if (p.hits.has(key)) continue;
+          p.hits.add(key);
+          this.sendEntityHit(h, p.w, 1, p.id);
+          this.fx.impact(_c.set(x, y, z), _d.set(0, 1, 0), 0xffd27a);
+          this.sfx.play('sawhit', _c, 0.8);
+        } else if (h.mirror) {
+          this.reflectProjectile(p, _c.set(x, y, z));
+          return true;
+        } else zigAt = new THREE.Vector3(x, y, z);
+      }
     }
     p.vel.copy(seg).multiplyScalar(len / Math.max(dt, 1e-4));
     if (zigAt) {
@@ -1888,23 +1958,26 @@ export class Game {
       const step = p.vel.length() * dt;
       const dir = _a.copy(p.vel).normalize();
       const hit = this.world.raycast(p.pos.x, p.pos.y, p.pos.z, dir.x, dir.y, dir.z, step + 0.1);
-      let hitPlayer = false;
+      let hitPlayer = false, mirrorHit = false;
       const next = _b.copy(p.pos).addScaledVector(p.vel, dt);
       if (p.local) {
         // Yol boyunca 0.3 m aralıklarla kontrol (düşük FPS'te oyuncunun içinden geçmesin)
         const pathLen = hit ? Math.min(step, hit.t) : step;
         const n = Math.max(1, Math.ceil(pathLen / 0.3));
-        // Oyuncu ya da araç
+        // Oyuncu, araç, taret, yaratık ya da kedi tablosu
         const targets = [
           ...[...this.players.values()].filter((q) => q.avatar && q.avatar.alive).map((q) => (x, y, z) => this.pointHitsAvatar(q.avatar, x, y, z, 0.15)),
           ...[...this.vehicles.values()].map((v) => (x, y, z) => this.pointHitsVehicle(v, x, y, z, 0.15)),
+          (x, y, z) => this.pointHitsEntity(x, y, z, 0.15),
         ];
         for (const touch of targets) {
           if (hitPlayer) break;
           for (let k = 1; k <= n; k++) {
             const f = (k / n) * pathLen;
-            if (touch(p.pos.x + dir.x * f, p.pos.y + dir.y * f, p.pos.z + dir.z * f)) {
+            const r = touch(p.pos.x + dir.x * f, p.pos.y + dir.y * f, p.pos.z + dir.z * f);
+            if (r) {
               hitPlayer = true;
+              mirrorHit = !!r.mirror;
               next.copy(p.pos).addScaledVector(dir, f);
               break;
             }
@@ -1935,7 +2008,9 @@ export class Game {
 
       if (explodeAt) {
         if (p.local) {
-          this.detonate(p, explodeAt);
+          // Kedi tablosuna çarpan patlayıcı mermi atana yansır (orada patlamaz)
+          if (mirrorHit && W.radius > 0) this.reflectProjectile(p, explodeAt);
+          else this.detonate(p, explodeAt);
           p.fx.dispose();
           this.projectiles.splice(i, 1);
         } else {
@@ -1980,6 +2055,15 @@ export class Game {
     p.t = Math.min(c.age, W.life);
     for (let k = Math.floor(p.t / RUBIK_DT); k > 0 && !p.rest; k--) this.stepRubik(p, RUBIK_DT, W);
     p.fx.obj.position.copy(p.pos);
+  }
+
+  // Kedi tablosu mermiyi yansıttı: burada yalnızca görüntü, hasarı sunucu atana verir
+  reflectProjectile(p, pos) {
+    const W = WEAPONS[p.w];
+    this.fx.explosion(pos, 1.6, W.color);
+    this.sfx.play('explosion', pos, 0.5);
+    this.map.painting.flash();
+    this.send({ t: 'mirror', id: p.id });
   }
 
   detonate(p, pos) {
@@ -2243,9 +2327,13 @@ export class Game {
     const vehicles = [];
     for (const v of this.vehicles.values()) if (v.rider == null && !v.dead) vehicles.push({ x: v.cx, z: v.cz, k: v.kind });
     const meteors = this.meteors.map((m) => ({ x: m.pos.x, z: m.pos.z, r: METEOR.radius }));
+    // Taretler (kendi taretlerimiz yeşil çerçeveli) ve yaratıklar
+    const others = [];
+    for (const tu of this.turrets.values()) others.push({ x: tu.x, z: tu.z, k: tu.kind, mine: tu.owner === this.myId });
+    for (const c of this.creatures.values()) others.push({ x: c.view.pos.x, z: c.view.pos.z, k: 'anom' });
     const view = { x: me.x, z: me.z, yaw: me.yaw };
-    hud.drawMinimap(this.map.minimap, view, crates, blips, holes, vehicles, meteors);
-    if (this.bigMap) hud.drawBigMap(this.map.minimap, view, crates, blips, holes, vehicles, meteors);
+    hud.drawMinimap(this.map.minimap, view, crates, blips, holes, vehicles, meteors, others);
+    if (this.bigMap) hud.drawBigMap(this.map.minimap, view, crates, blips, holes, vehicles, meteors, others);
     hud.setJet(me.alive && me.jetpack && !me.veh ? me.fuel : -1, me.jetting);
     const myVeh = me.alive && me.veh ? this.vehicles.get(me.veh) : null;
     if (myVeh) hud.setVehicleHp(myVeh.kind, myVeh.hp, VEH[myVeh.kind].hp); else hud.setVehicleHp(null);
@@ -2255,6 +2343,7 @@ export class Game {
       if (this.ride.kind === 'moto') prompt += ` · ${Math.round(Math.abs(this.ride.speed) * 3.6)} km/sa`;
       else prompt += ' · Boşluk: Zıpla';
     } else if (me.alive && this.nearVeh) prompt = `[E] ${VEH[this.nearVeh.kind].bin}`;
+    else if (me.alive && WEAPONS[me.cur] && WEAPONS[me.cur].type === 'deploy') prompt = '[Sol tık] Turuncu halkanın olduğu yere taret kur';
     hud.setPrompt(prompt);
     this.boardTimer -= dt;
     const showBoard = this.input.down('Tab') && this.controlsActive();
@@ -2270,3 +2359,6 @@ export class Game {
     }
   }
 }
+
+// Taretler, yaratıklar, mayınlar, yakalama silahı, kedi tablosu (entities.js)
+Object.assign(Game.prototype, GameEntities);

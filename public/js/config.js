@@ -28,5 +28,5 @@ export const CONFIG = {
   ICE_SERVERS: null,
 
   // Sürüm değişince eski önbellekli istemciler uyarılır.
-  VERSION: '1.2.0',
+  VERSION: '1.3.0',
 };

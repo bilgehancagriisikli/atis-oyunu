@@ -99,7 +99,7 @@ export class Sfx {
   play(name, pos = null, vol = 1) {
     if (!this.ctx || this.ctx.state !== 'running') return;
     const t = this.ctx.currentTime;
-    const maxD = name === 'explosion' || name === 'implode' || name === 'meteor' ? 160 : 100;
+    const maxD = name === 'explosion' || name === 'implode' || name === 'meteor' || name === 'mortar' ? 160 : name === 'purr' ? 14 : 100;
     const o = this.out(pos, vol, maxD);
     if (!o) return;
     switch (name) {
@@ -268,6 +268,51 @@ export class Sfx {
       case 'meteor':
         this.tone(o, t, 'sine', 1800, 250, 2.8, 0.35, 0.3);
         this.burst(o, t, 'bandpass', 900, 300, 2.8, 0.3, 1.5);
+        break;
+      case 'deploy':
+        this.tone(o, t, 'square', 300, 900, 0.12, 0.25);
+        this.burst(o, t + 0.08, 'lowpass', 800, 200, 0.2, 0.5);
+        break;
+      case 'mortar':
+        // Havan: tok gümleme + uzaklaşan ıslık
+        this.tone(o, t, 'sine', 140, 45, 0.3, 1.0);
+        this.burst(o, t, 'lowpass', 700, 120, 0.3, 0.8, 0.7);
+        this.tone(o, t + 0.05, 'sine', 900, 300, 0.6, 0.12, 0.05);
+        break;
+      case 'tully':
+        this.burst(o, t, 'bandpass', 1800, 700, 0.09, 0.8, 1);
+        this.tone(o, t, 'square', 420, 160, 0.07, 0.25);
+        break;
+      case 'grapple':
+        this.burst(o, t, 'bandpass', 1200, 3000, 0.15, 0.5, 1.5);
+        this.tone(o, t + 0.12, 'square', 1600, 1300, 0.04, 0.25);
+        break;
+      case 'reel':
+        for (let i = 0; i < 8; i++) this.tone(o, t + i * 0.05, 'square', 700 + i * 60, 650 + i * 60, 0.025, 0.15);
+        break;
+      case 'screech':
+        this.tone(o, t, 'sawtooth', 600, 1400, 0.35, 0.3, 0.02);
+        this.tone(o, t + 0.1, 'sawtooth', 900, 500, 0.4, 0.25, 0.02);
+        break;
+      case 'bite':
+        this.burst(o, t, 'highpass', 2500, 1200, 0.06, 0.6);
+        this.tone(o, t, 'square', 220, 110, 0.08, 0.3);
+        break;
+      case 'cdie':
+        this.tone(o, t, 'sawtooth', 700, 120, 0.6, 0.3, 0.02);
+        this.burst(o, t, 'lowpass', 1500, 200, 0.4, 0.5);
+        break;
+      case 'meow':
+        // Miyav: yükselip alçalan iki harmonik
+        this.tone(o, t, 'triangle', 520, 880, 0.16, 0.5, 0.02);
+        this.tone(o, t + 0.16, 'triangle', 880, 430, 0.34, 0.45, 0.01);
+        this.tone(o, t, 'sine', 1040, 1700, 0.16, 0.15, 0.02);
+        this.tone(o, t + 0.16, 'sine', 1700, 860, 0.34, 0.12, 0.01);
+        break;
+      case 'purr':
+        // Mırlama: düşük frekanslı titreşim
+        for (let i = 0; i < 10; i++) this.burst(o, t + i * 0.09, 'lowpass', 220, 120, 0.07, 0.25, 0.8);
+        this.tone(o, t, 'sine', 48, 42, 0.95, 0.2, 0.1);
         break;
     }
   }

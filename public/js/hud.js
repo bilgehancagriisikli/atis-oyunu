@@ -199,7 +199,7 @@ export class Hud {
 
   // --------------------------------------------------------
   // Mini harita (oyuncu merkezli, dönen)
-  drawMinimap(mapCanvas, me, crates, blips, holes, vehicles = [], meteors = []) {
+  drawMinimap(mapCanvas, me, crates, blips, holes, vehicles = [], meteors = [], others = []) {
     const ctx = this.miniCtx;
     const S = this.el.mini.width;
     const zm = 2.2; // piksel / metre
@@ -217,7 +217,7 @@ export class Hud {
     ctx.drawImage(mapCanvas, -(me.x + MINIMAP_RANGE) * zm, -(me.z + MINIMAP_RANGE) * zm,
       mapCanvas.width * zm / k0, mapCanvas.height * zm / k0);
     ctx.globalAlpha = 1;
-    this.drawMarkers(ctx, (x) => (x - me.x) * zm, (z) => (z - me.z) * zm, crates, blips, holes, 1, vehicles, meteors);
+    this.drawMarkers(ctx, (x) => (x - me.x) * zm, (z) => (z - me.z) * zm, crates, blips, holes, 1, vehicles, meteors, others);
     ctx.restore();
     // Oyuncu oku
     ctx.save();
@@ -238,7 +238,7 @@ export class Hud {
     ctx.fillText('K', S / 2 + Math.cos(na) * (S / 2 - 12), S / 2 + Math.sin(na) * (S / 2 - 12));
   }
 
-  drawMarkers(ctx, tx, tz, crates, blips, holes, scale, vehicles = [], meteors = []) {
+  drawMarkers(ctx, tx, tz, crates, blips, holes, scale, vehicles = [], meteors = [], others = []) {
     // Düşecek cisimlerin patlama alanı (yanıp söner)
     const pulse = 0.45 + 0.35 * Math.sin(performance.now() / 90);
     for (const m of meteors) {
@@ -281,12 +281,24 @@ export class Hud {
       ctx.fillStyle = b.color;
       ctx.beginPath(); ctx.arc(tx(b.x), tz(b.z), 4 * scale, 0, Math.PI * 2); ctx.fill();
     }
+    // Taretler (mantar: kırmızı yarım daire, Tullimonstrum: mor kare) ve Anomalocaris (turuncu ok ucu)
+    for (const o of others) {
+      const x = tx(o.x), z = tz(o.z), r = 4.5 * scale;
+      ctx.lineWidth = o.mine ? 2 : 1;
+      ctx.strokeStyle = o.mine ? '#5dff7a' : '#000';
+      ctx.beginPath();
+      if (o.k === 'mush') { ctx.fillStyle = '#e8443a'; ctx.arc(x, z, r, Math.PI, 0); ctx.closePath(); }
+      else if (o.k === 'tully') { ctx.fillStyle = '#b59be0'; ctx.rect(x - r * 0.8, z - r * 0.8, r * 1.6, r * 1.6); }
+      else { ctx.fillStyle = '#ff9a4d'; ctx.moveTo(x, z - r); ctx.lineTo(x + r, z + r); ctx.lineTo(x, z + r * 0.4); ctx.lineTo(x - r, z + r); ctx.closePath(); }
+      ctx.fill();
+      ctx.stroke();
+    }
   }
 
   // Büyük harita (M)
   showBigMap(show) { this.el.big.classList.toggle('hidden', !show); }
 
-  drawBigMap(mapCanvas, me, crates, blips, holes, vehicles = [], meteors = []) {
+  drawBigMap(mapCanvas, me, crates, blips, holes, vehicles = [], meteors = [], others = []) {
     const c = this.el.bigCanvas;
     const ctx = this.bigCtx;
     const S = c.width;
@@ -294,7 +306,7 @@ export class Hud {
     ctx.clearRect(0, 0, S, S);
     ctx.drawImage(mapCanvas, 0, 0, S, S);
     const tx = (x) => (x + MINIMAP_RANGE) * k, tz = (z) => (z + MINIMAP_RANGE) * k;
-    this.drawMarkers(ctx, tx, tz, crates, blips, holes, 1.5, vehicles, meteors);
+    this.drawMarkers(ctx, tx, tz, crates, blips, holes, 1.5, vehicles, meteors, others);
     ctx.save();
     ctx.translate(tx(me.x), tz(me.z));
     ctx.rotate(-me.yaw);

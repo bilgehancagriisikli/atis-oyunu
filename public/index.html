@@ -39,7 +39,7 @@
           <div><kbd>Sağ tık</kbd> Zeka küplerini patlat</div>
           <div><kbd>Boşluk</kbd> Zıpla</div>
           <div><kbd>Shift</kbd> Koş</div>
-          <div><kbd>1-9</kbd> / <kbd>Tekerlek</kbd> Silah seç</div>
+          <div><kbd>0-9</kbd> / <kbd>Tekerlek</kbd> Silah seç</div>
           <div><kbd>Q</kbd> Önceki silah</div>
           <div><kbd>E</kbd> Araca bin / in</div>
           <div><kbd>V</kbd> 1. / 3. şahıs kamera</div>
@@ -50,8 +50,9 @@
         </div>
         <p class="small">Herkes <b>tabanca</b> ve <b style="color:#4aedd9">elmas kılıçla</b> doğar. Diğer silahlar paraşütle düşen <b style="color:#f5a300">turuncu Lego tuğlalarından</b> çıkar. <b style="color:#1fa64a">Yeşil tuğlalar</b> can, <b style="color:#1e6fe0">mavi tuğlalar</b> jetpack verir (havada <kbd>Boşluk</kbd> basılı tut).</p>
         <p class="small">Haritada <b style="color:#4fd8ff">motosikletler</b>, <b style="color:#d9c7a8">dev çinçillalar</b> ve <b style="color:#d08a3a">Türk avurtlakları</b> var: yanına gidip <kbd>E</kbd>'ye bas. Motosiklette <kbd>W/S</kbd> gaz-fren, <kbd>A/D</kbd> direksiyon, <kbd>Shift</kbd> nitro. Çinçilla <kbd>Boşluk</kbd> ile çok yükseğe zıplar, yüksekten düştüğü yerdekileri ezer. Avurtlak çinçilladan hızlı koşar ama az zıplar. Araçların ve hayvanların canı var; canı biten parçalanır, bir süre sonra yeniden çıkar. Duvara çarpınca durmaz, sekersin.</p>
-        <p class="small">Yerdeki <b style="color:#e6d8b4">clypeaster fosilleri</b> trambolin gibi zıplatır. Bazen gökten bir <b style="color:#ff7b3a">Platon, Arşimet ya da Kepler-Poinsot cismi</b> düşer: yerdeki kırmızı halkadan kaç!</p>
-        <p class="small">Silah tuşları: <b>1</b> Tabanca, Elmas Kılıç · <b>2</b> Pompalı, Minigun · <b>3</b> Bazuka, Bomba Atar, Zikzak · <b>4</b> Lazer, Dondurucu, Raylı Top · <b>5</b> Yıldırım, Sarmal Testere · <b>6</b> Kara Delik, Beyaz Delik · <b>7</b> Işınlanma · <b>8</b> Zeka Küpü Bombası (sol tık at, sağ tık patlat) · <b>9</b> Fraktal Silahı. Aynı tuşa tekrar basınca gruptaki sonraki silaha geçer.</p>
+        <p class="small">Yerdeki <b style="color:#e6d8b4">clypeaster fosilleri</b> trambolin gibi çok yükseğe zıplatır. Sık sık gökten bir <b style="color:#ff7b3a">Platon, Arşimet ya da Kepler-Poinsot cismi</b> düşer: yerdeki kırmızı halkadan kaç! Bazı yerlerde yerde duran <b style="color:#c9b996">deniz kabuğu fosilleri</b> aslında mayındır, üstüne basma.</p>
+        <p class="small">Arada bir uçan <b style="color:#ff9a4d">Anomalocaris</b> sürüleri çıkar ve oyunculara yakından saldırır: vurarak avlayabilirsin. Kuzeybatı binasındaki <b style="color:#ff7090">kedi tablosuna</b> ateş etme, hasarı sana geri yansıtır. Kuzey duvarının üstünde beyaz bir Ankara kedisi uyuyor.</p>
+        <p class="small">Silah tuşları: <b>1</b> Tabanca, Elmas Kılıç · <b>2</b> Pompalı, Minigun · <b>3</b> Bazuka, Bomba Atar, Zikzak · <b>4</b> Lazer, Dondurucu, Raylı Top · <b>5</b> Yıldırım, Sarmal Testere · <b>6</b> Kara Delik, Beyaz Delik · <b>7</b> Işınlanma, Yakalama Silahı (yakaladığını kendine çeker) · <b>8</b> Zeka Küpü Bombası (sol tık at, sağ tık patlat) · <b>9</b> Fraktal Silahı · <b>0</b> Mantar Taret (havan topu), Tullimonstrum Taret (tabanca): sol tıkla turuncu halkanın olduğu yere kurulur. Aynı tuşa tekrar basınca gruptaki sonraki silaha geçer.</p>
       </details>
       <details>
         <summary>⚙️ Ayarlar</summary>
@@ -122,7 +123,7 @@
 
       <div id="bigmap" class="hidden">
         <canvas id="bigmap-canvas" width="512" height="512"></canvas>
-        <p>Turuncu: silah · Yeşil: can · Mavi: jetpack · ◆ Motosiklet · ● Çinçilla · ▲ Avurtlak · Mor/Beyaz: kara/beyaz delik · Kırmızı halka: gökten cisim düşecek</p>
+        <p>Turuncu: silah · Yeşil: can · Mavi: jetpack · ◆ Motosiklet · ● Çinçilla · ▲ Avurtlak · Mor/Beyaz: kara/beyaz delik · Kırmızı halka: gökten cisim düşecek · Kırmızı yarım daire: mantar taret · Mor kare: Tullimonstrum taret (yeşil çerçeve: senin) · Turuncu ok ucu: Anomalocaris</p>
       </div>
 
       <div id="death" class="hidden">
@@ -151,6 +152,7 @@
           <div class="row-btns">
             <button id="vreset-btn" class="secondary">Araçları park yerine gönder</button>
             <button id="meteor-btn" class="secondary">Gökten cisim düşür</button>
+            <button id="creature-btn" class="secondary">Anomalocaris çağır</button>
           </div>
         </div>
         <details>

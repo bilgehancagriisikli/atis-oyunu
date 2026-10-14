@@ -583,6 +583,14 @@ export class Effects {
     this.smoke.spawn(pos.x, pos.y + 1, pos.z, (Math.random() - 0.5) * 2, 4, (Math.random() - 0.5) * 2, 1.4, 1.2, 3, this.color(0x555555), 0.45, -0.2, 0.8);
   }
 
+  // Mantar taretinin havan mermisinin spor izi
+  sporeTrail(pos) {
+    if (Math.random() < 0.6) {
+      this.smoke.spawn(pos.x, pos.y, pos.z, (Math.random() - 0.5) * 0.6, 0.3, (Math.random() - 0.5) * 0.6, 0.9, 0.25, 0.8, this.color(0xe8d8b0), 0.6, -0.3, 1);
+    }
+    this.add.spawn(pos.x, pos.y, pos.z, 0, 0, 0, 0.25, 0.3, 0.05, this.color(0xff6a4a), 0.8);
+  }
+
   // Araç parçalandı
   vehicleBoom(pos) {
     this.explosion(pos, 5, 0xff7a2a);
