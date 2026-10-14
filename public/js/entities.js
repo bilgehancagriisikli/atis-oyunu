@@ -151,6 +151,7 @@ export const GameEntities = {
       case 'mir': {
         // Kedi tablosu hasarı geri yansıttı: tablodan atana kırmızı ışın
         const P = this.map.painting;
+        if (msg.id != null) this.removeProjectile(msg.id);
         P.flash();
         _p.fromArray(P.center);
         const to = msg.by === this.myId ? _q.set(this.me.x, this.me.y + 1.1, this.me.z) : this.players.get(msg.by)?.avatar?.center(_q);
@@ -279,7 +280,12 @@ export const GameEntities = {
     const me = this.me;
     const av = this.players.get(P.by)?.avatar;
     P.left -= dt;
-    if (!av || !av.alive || P.left <= 0 || !me.alive) { this.pull = null; return false; }
+    if (!av || !av.alive || P.left <= 0 || !me.alive) {
+      // Çekilme yarıda kesildi: savrulma hızı sönsün
+      this.pull = null;
+      me.vx *= 0.3; me.vz *= 0.3; me.vy = Math.min(me.vy, 2);
+      return false;
+    }
     const dx = av.pos.x - me.x, dy = av.pos.y + 0.3 - me.y, dz = av.pos.z - me.z;
     const d = Math.hypot(dx, dy, dz);
     if (d < 2.0) {
@@ -366,6 +372,8 @@ export const GameEntities = {
     if (Math.abs(x) > HALF - 0.8 || Math.abs(z) > HALF - 0.8) return null;
     const g = this.world.groundAt(x, z, Math.max(yTop, me.y + 0.6));
     if (Math.abs(g - me.y) > 3.5 || this.world.overlapsPlayer(x, g, z, 0.45, 1.4)) return null;
+    // Mantar havan topu yukarı ateş eder: üstü kapalı yere kurulamaz
+    if (W.turret === 'mush' && this.world.raycast(x, g + TURRET.mush.muzzleY, z, 0, 1, 0, 12)) return null;
     return new THREE.Vector3(x, g, z);
   },
 
@@ -391,10 +399,11 @@ export const GameEntities = {
   fireGrapple(W, o, base, muzzle) {
     const r = this.trace(o, base, W.range);
     const h = r.hits[0];
-    if (h && h.id != null) this.send({ t: 'grab', tg: h.id });
-    else if (h && h.cid != null) this.send({ t: 'grab', c: h.cid });
+    // Önce 'fire' gider: diğer oyuncularda uçan kanca oluşur, ardından gelen 'grab' onu çekme ipine çevirir
     this.shootRope((out) => (this.me.alive ? this.muzzleWorld(out) : null), r.end, this.myId);
     this.send({ t: 'fire', w: 'grapple', e: [r.end.x, r.end.y, r.end.z].map((v) => Math.round(v * 100) / 100) });
+    if (h && h.id != null) this.send({ t: 'grab', tg: h.id });
+    else if (h && h.cid != null) this.send({ t: 'grab', c: h.cid });
   },
 
   // ------------------------------------------------------------
@@ -439,8 +448,9 @@ export const GameEntities = {
       out.push({ h: { tid: tu.id }, c: new THREE.Vector3(tu.x, tu.y + TURRET[tu.kind].hit.y1 / 2, tu.z), r: TURRET[tu.kind].hit.hw });
     }
     for (const c of this.creatures.values()) out.push({ h: { cid: c.id }, c: c.view.pos.clone(), r: CREATURE.r });
+    // Tablo yalnızca odanın içinden (duvarın önünden) vurulabilir, duvarın arkasından değil
     const P = this.map.painting;
-    out.push({ h: { mirror: true }, c: new THREE.Vector3().fromArray(P.center), r: (P.maxX - P.minX) / 2, mirror: true });
+    if (this.me.z > P.maxZ) out.push({ h: { mirror: true }, c: new THREE.Vector3().fromArray(P.center), r: (P.maxX - P.minX) / 2, mirror: true });
     return out;
   },
 

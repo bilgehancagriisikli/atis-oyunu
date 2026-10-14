@@ -163,7 +163,7 @@ export function zTexture() {
 // ------------------------------------------------------------
 // Deniz kabuğu fosili (tarak kabuğu): menteşeden yelpaze gibi açılan ışınsal kaburgalar, kireçtaşı rengi.
 // Yarısı toprağa gömülü durur.
-let shellGeo = null, shellMat = null;
+let shellGeo = null, shellMat = null, earGeo = null;
 export function buildShellMine() {
   if (!shellGeo) {
     const R = 0.58, ribs = 13, A = 1.95; // yelpaze açısı
@@ -196,15 +196,15 @@ export function buildShellMine() {
     g.computeVertexNormals();
     shellGeo = g;
     shellMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    earGeo = new THREE.BoxGeometry(0.14, 0.04, 0.09);
   }
   const root = new THREE.Group();
   const shell = new THREE.Mesh(shellGeo, shellMat);
   shell.receiveShadow = true;
   root.add(shell);
-  // Menteşedeki iki "kulakçık"
-  const ear = new THREE.BoxGeometry(0.14, 0.04, 0.09);
+  // Menteşedeki iki "kulakçık" (geometri ortak: mayın silinince bırakılacak bir şey kalmaz)
   for (const s of [-1, 1]) {
-    const e = new THREE.Mesh(ear, shellMat);
+    const e = new THREE.Mesh(earGeo, shellMat);
     e.position.set(s * 0.08, 0.02, 0.27);
     root.add(e);
   }

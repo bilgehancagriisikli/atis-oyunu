@@ -331,6 +331,7 @@ export class HostLogic {
     p.prot = this.time + SPAWN_PROTECT;
     p.respawnAt = 0;
     p.x = s.x; p.y = s.y; p.z = s.z;
+    p.mpx = undefined; // mayın tetikleme yolu yeniden başlar
     p.yaw = Math.atan2(s.x, s.z);
     this.broadcast({ t: 'spawn', id: p.id, p: [s.x, s.y, s.z], yaw: r2(p.yaw), prot: SPAWN_PROTECT });
   }
@@ -420,12 +421,15 @@ export class HostLogic {
         // Binmeden önce gönderilmiş (araç bilgisi olmayan) eski konumlar oyuncuyu eyerden indirmesin
         const stale = p.veh && !(Array.isArray(msg.v) && msg.v[0] === p.veh);
         // Yatay hız tahmini (mantar taretinin önden nişan alması için)
+        // (Ağda yığılıp art arda gelen paketlerde tahmin sıfırlanmaz; yalnızca güncellenmez)
         const nowS = performance.now() / 1000, dts = nowS - (p.stT || 0);
-        if (dts > 0.01 && dts < 0.5 && !stale) {
-          p.vxe = (p.vxe || 0) * 0.6 + Math.max(-30, Math.min(30, (x - p.x) / dts)) * 0.4;
-          p.vze = (p.vze || 0) * 0.6 + Math.max(-30, Math.min(30, (z - p.z) / dts)) * 0.4;
-        } else { p.vxe = 0; p.vze = 0; }
-        p.stT = nowS;
+        if (dts > 0.01) {
+          if (dts < 0.5 && !stale) {
+            p.vxe = (p.vxe || 0) * 0.6 + Math.max(-30, Math.min(30, (x - p.x) / dts)) * 0.4;
+            p.vze = (p.vze || 0) * 0.6 + Math.max(-30, Math.min(30, (z - p.z) / dts)) * 0.4;
+          } else { p.vxe = 0; p.vze = 0; }
+          p.stT = nowS;
+        }
         if (!stale) { p.x = x; p.y = y; p.z = z; }
         if (Array.isArray(msg.r)) { p.yaw = +msg.r[0] || 0; p.pitch = +msg.r[1] || 0; }
         if (WEAPONS[msg.w] && p.inv.has(msg.w)) p.w = msg.w;
@@ -590,6 +594,7 @@ export class HostLogic {
         this.releaseVehicle(p);
         const from = [r2(p.x), r2(p.y), r2(p.z)];
         p.x = x; p.y = y; p.z = z;
+        p.mpx = undefined; // ışınlanılan yol üstündeki mayınlar patlamasın
         this.endProtection(p);
         this.broadcast({ t: 'tp', id, from, to: [r2(x), r2(y), r2(z)] }, id);
         // Işınlanma ezmesi: varılan noktada duran oyuncu ölür

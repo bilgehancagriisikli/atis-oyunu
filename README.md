@@ -75,7 +75,7 @@ kodu ve kendi isimleriyle doğrudan katılır.
 - **Mini harita** (sol üstte, dönen) ve **büyük harita** (`M`): kutular, araçlar, kara/beyaz delikler ve
   ateş eden düşmanlar, gökten cisim düşecek yerler, taretler ve Anomalocaris'ler görünür.
 - Skor tablosu, öldürme akışı, sohbet, vuruş işaretleri, hasar yönü göstergesi, doğma koruması.
-- Kodla üretilen sesler ve dokular: dışarıdan resim/ses dosyası yok.
+- Sesler ve dokular kodla üretilir; tek dış dosya kedi tablosundaki fotoğraftır (`img/kedi.webp`).
 - **Admin paneli** (Esc menüsünde): oyuncu atma, skorları sıfırlama, kutu yağdırma, araçları park yerine gönderme,
   gökten cisim düşürme, Anomalocaris çağırma.
 

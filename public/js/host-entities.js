@@ -83,6 +83,8 @@ export const HostEntities = {
       return W.dmg;
     }
     if (!p.alive || !p.inv.has(msg.w)) return null;
+    // Doğrudan isabet yalnızca bu türlerden gelir; patlayıcı mermiler alan hasarıyla ('boom') işler
+    if (!['hitscan', 'rail', 'beam', 'melee', 'fractal'].includes(W.type)) return null;
     const range = W.type === 'melee' ? W.range + 3 : (W.range || 100) + 10;
     if (Math.hypot(tx - p.x, tz - p.z) > range) return null;
     const per = Array.isArray(W.dmg) ? W.dmg[0] : W.dmg;
@@ -125,6 +127,8 @@ export const HostEntities = {
     if (Math.abs(x) > HALF - 0.8 || Math.abs(z) > HALF - 0.8) return;
     const g = this.world.groundAt(x, z, y + 0.6);
     if (Math.abs(g - y) > 0.4 || this.world.overlapsPlayer(x, g, z, 0.45, 1.4)) return;
+    // Havan topu yukarı ateş eder: üstü kapalı yere (çatı, köprü altı) kurulamaz
+    if (W.turret === 'mush' && this.world.raycast(x, g + TURRET.mush.muzzleY, z, 0, 1, 0, 12)) return;
     if (!this.rateOk(p, 'deploy', 0.8)) return;
     // Oyuncu başına sınır: fazlası kurulunca en eskisi söner
     const own = this.turrets.filter((t) => t.owner === id);
@@ -225,8 +229,10 @@ export const HostEntities = {
     const o = [tu.x, tu.y + T.muzzleY, tu.z];
     const flight = Math.max(1.3, Math.min(3.2, 1.1 + bd * 0.04));
     const lead = best.p ? T.lead * flight : 0;
-    const px = best.x + (best.p ? (best.p.vxe || 0) * lead : 0);
-    const pz = best.z + (best.p ? (best.p.vze || 0) * lead : 0);
+    let px = best.x + (best.p ? (best.p.vxe || 0) * lead : 0);
+    let pz = best.z + (best.p ? (best.p.vze || 0) * lead : 0);
+    // Önden nişan taretin dibine düşmesin (sahibini vurmasın)
+    if (Math.hypot(px - tu.x, pz - tu.z) < T.minRange) { px = best.x; pz = best.z; }
     const py = this.world.groundAt(px, pz, best.y + 1);
     const v = [(px - o[0]) / flight, (py - o[1] + 0.5 * T.grav * flight * flight) / flight, (pz - o[2]) / flight];
     const s = { id: this.nextShell++, tu: tu.id, owner: tu.owner, o: o.map(r2), v: v.map(r2), born: this.time, last: 0 };
@@ -469,9 +475,11 @@ export const HostEntities = {
     }
     // Üstünden geçen (yaya ya da araçla) mayını patlatır. Hızlı araçlar atlamasın diye
     // son tick'ten bu yana gidilen yol parçası denetlenir.
+    // Bir tick'te en hızlı araçtan bile uzun sıçrama (ışınlanma, doğma) yol sayılmaz
+    const lim = 45 * dt + 6; // ağda yığılan birkaç konum paketine de pay
     for (const p of this.players.values()) {
       if (!p.alive) { p.mpx = undefined; continue; }
-      if (p.mpx === undefined || Math.hypot(p.x - p.mpx, p.z - p.mpz) > 10) { p.mpx = p.x; p.mpz = p.z; }
+      if (p.mpx === undefined || Math.hypot(p.x - p.mpx, p.z - p.mpz) > lim) { p.mpx = p.x; p.mpz = p.z; }
       const v = p.veh ? this.vehicle(p.veh) : null;
       const footY = v ? p.y - VEH[v.kind].seatOff : p.y;
       const extra = v ? VEH[v.kind].body.radius * 0.8 : 0;
@@ -513,7 +521,7 @@ export const HostEntities = {
     const P = this.map.painting;
     if (!P) return;
     const [px, py, pz] = P.center;
-    let amount = null, w = msg.w;
+    let amount = null, w = msg.w, consumed = null;
     if (msg.id != null) {
       const pr = p.proj.get(msg.id);
       if (!pr) return;
@@ -525,13 +533,16 @@ export const HostEntities = {
         const W = WEAPONS[pr.w];
         if (!W || !(W.radius > 0)) return; // yalnızca patlayan mermiler yansır
         p.proj.delete(msg.id);
+        consumed = msg.id;
         amount = W.dmg;
       }
     } else {
       amount = this.weaponHitAmount(p, msg, 'mirror', px, pz);
     }
     if (!amount) return;
-    this.broadcast({ t: 'mir', by: id, p: [px, py, pz], w });
+    // Yansıyan mermi tüketildiyse diğer oyuncular da kopyasını silsin
+    this.broadcast({ t: 'mir', by: id, p: [px, py, pz], w, ...(consumed != null ? { id: consumed } : {}) });
+    this.endProtection(p); // isabet 'fire' mesajından önce gelir; doğma koruması yansımayı yutmasın
     this.damage(p, p, amount, 'mirror');
   },
 

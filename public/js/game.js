@@ -232,7 +232,8 @@ export class Game {
       const s = q === 'high' ? 2048 : 1024;
       sun.shadow.mapSize.set(s, s);
       const c = sun.shadow.camera;
-      c.left = -82; c.right = 82; c.top = 82; c.bottom = -82; c.near = 10; c.far = 220;
+      // Güneş çapraz baktığından ışık uzayında kare harita ±106 genişliğe yayılır
+      c.left = -106; c.right = 106; c.top = 86; c.bottom = -86; c.near = 10; c.far = 220;
       sun.shadow.bias = -0.0004;
       sun.shadow.normalBias = 0.04;
     }
@@ -790,7 +791,7 @@ export class Game {
       const wasJetting = me.jetting;
       me.jetting = false;
       if (me.jetpack) {
-        if (jump && !me.onGround && me.fuel > 0) {
+        if (jump && !me.onGround && me.fuel > 0 && !this.pull) {
           me.jetting = true;
           if (me.vy < 8) me.vy = Math.min(me.vy + 40 * dt, 8); // savrulmayı frenlemesin
           me.fuel = Math.max(0, me.fuel - 22 * dt);
